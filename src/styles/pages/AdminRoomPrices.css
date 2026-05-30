@@ -1,0 +1,181 @@
+.admin-prices {
+  min-height: 100vh;
+}
+
+.admin-prices-header {
+  background: linear-gradient(135deg, rgba(139, 115, 85, 0.9) 0%, rgba(212, 175, 55, 0.9) 100%);
+  color: white;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.admin-prices-header h1 {
+  color: white;
+  margin-bottom: 0.5rem;
+}
+
+.admin-prices-header p {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+}
+
+.admin-prices-form {
+  padding: 3rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.admin-schedule,
+.admin-prices-table-section {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.admin-schedule h2,
+.admin-prices-table-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+  text-align: left;
+  color: var(--primary-color);
+}
+
+.admin-schedule-desc {
+  color: #666;
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.weekend-day-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.weekend-day-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  background: #fafafa;
+  transition: var(--transition);
+}
+
+.weekend-day-option:has(input:checked) {
+  border-color: var(--secondary-color);
+  background: rgba(212, 175, 55, 0.15);
+}
+
+.weekend-day-option input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--primary-color);
+}
+
+.weekend-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.95rem;
+  color: #666;
+}
+
+.btn-preset {
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: var(--transition);
+}
+
+.btn-preset:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.schedule-preview {
+  margin: 0;
+  padding: 1rem;
+  background: rgba(139, 115, 85, 0.08);
+  border-radius: 6px;
+  text-align: left;
+  color: #555;
+}
+
+.admin-prices-table-wrap {
+  overflow-x: auto;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 1.5rem;
+}
+
+.admin-prices-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-prices-table th,
+.admin-prices-table td {
+  padding: 1rem 1.25rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-prices-table th {
+  background: rgba(139, 115, 85, 0.1);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.admin-prices-table input {
+  width: 100%;
+  max-width: 160px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.admin-prices-table input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.admin-prices-error {
+  color: #c0392b;
+  font-weight: 500;
+}
+
+.admin-prices-success {
+  color: #155724;
+  font-weight: 500;
+}
+
+.admin-prices-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.admin-prices-actions .btn {
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  .admin-prices-table th,
+  .admin-prices-table td {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+}
