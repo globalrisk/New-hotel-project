@@ -3,8 +3,34 @@ import { ALL_WEEK_DAYS, DAY_OPTIONS } from '../config/pricingDefaults';
 import { formatVnd } from './currency';
 import { parseDdMmYyyy } from './date';
 
-export function isWeekendNight(date: Date, weekendDays: number[]): boolean {
-  return weekendDays.includes(date.getDay());
+const FRIDAY = 5;
+const SUNDAY = 0;
+const THURSDAY = 4;
+const MONDAY = 1;
+
+function stayIncludesDay(stayNights: Date[], day: number): boolean {
+  return stayNights.some((night) => night.getDay() === day);
+}
+
+/**
+ * Weekend rate applies per admin schedule, except:
+ * - Friday → weekday if the stay also includes Thursday
+ * - Sunday → weekday if the stay also includes Monday
+ */
+export function isWeekendNight(
+  date: Date,
+  weekendDays: number[],
+  stayNights?: Date[],
+): boolean {
+  const day = date.getDay();
+  if (!weekendDays.includes(day)) return false;
+
+  if (stayNights && stayNights.length > 0) {
+    if (day === FRIDAY && stayIncludesDay(stayNights, THURSDAY)) return false;
+    if (day === SUNDAY && stayIncludesDay(stayNights, MONDAY)) return false;
+  }
+
+  return true;
 }
 
 export function getWeekdayDays(weekendDays: number[]): number[] {
@@ -96,8 +122,15 @@ export function getStayNights(checkIn: string, checkOut: string): Date[] | null 
   return nights.length > 0 ? nights : null;
 }
 
-export function getNightRate(room: Room, date: Date, weekendDays: number[]): number {
-  return isWeekendNight(date, weekendDays) ? room.weekendPrice : room.weekdayPrice;
+export function getNightRate(
+  room: Room,
+  date: Date,
+  weekendDays: number[],
+  stayNights?: Date[],
+): number {
+  return isWeekendNight(date, weekendDays, stayNights)
+    ? room.weekendPrice
+    : room.weekdayPrice;
 }
 
 export interface StayNightBreakdown {
@@ -121,8 +154,8 @@ export function calculateStayForRooms(
   let weekendNights = 0;
 
   for (const night of nights) {
-    subtotal += getNightRate(room, night, weekendDays) * quantity;
-    if (isWeekendNight(night, weekendDays)) {
+    subtotal += getNightRate(room, night, weekendDays, nights) * quantity;
+    if (isWeekendNight(night, weekendDays, nights)) {
       weekendNights += 1;
     } else {
       weekdayNights += 1;
