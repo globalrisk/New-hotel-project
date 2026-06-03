@@ -41,11 +41,15 @@ function toSortKey(day: number): number {
   return day === 0 ? 7 : day;
 }
 
-function dayShort(day: number): string {
+function defaultDayShort(day: number): string {
   return DAY_OPTIONS.find((d) => d.value === day)?.short ?? '';
 }
 
-function formatRange(startKey: number, endKey: number): string {
+function formatRange(
+  startKey: number,
+  endKey: number,
+  dayShort: (day: number) => string,
+): string {
   const startDay = startKey === 7 ? 0 : startKey;
   const endDay = endKey === 7 ? 0 : endKey;
   if (startKey === endKey) return dayShort(startDay);
@@ -53,9 +57,13 @@ function formatRange(startKey: number, endKey: number): string {
 }
 
 /** e.g. [4,5,6,0] → "Thu–Sun", [1,2,3] → "Mon–Wed" */
-export function formatDaysLabel(days: number[]): string {
+export function formatDaysLabel(
+  days: number[],
+  dayShort: (day: number) => string = defaultDayShort,
+  everyDayLabel = 'Every day',
+): string {
   if (days.length === 0) return '—';
-  if (days.length === 7) return 'Every day';
+  if (days.length === 7) return everyDayLabel;
 
   const sorted = [...new Set(days)].map(toSortKey).sort((a, b) => a - b);
   const parts: string[] = [];
@@ -66,21 +74,27 @@ export function formatDaysLabel(days: number[]): string {
     if (sorted[i] === rangeEnd + 1) {
       rangeEnd = sorted[i];
     } else {
-      parts.push(formatRange(rangeStart, rangeEnd));
+      parts.push(formatRange(rangeStart, rangeEnd, dayShort));
       rangeStart = sorted[i];
       rangeEnd = sorted[i];
     }
   }
-  parts.push(formatRange(rangeStart, rangeEnd));
+  parts.push(formatRange(rangeStart, rangeEnd, dayShort));
   return parts.join(', ');
 }
 
-export function getWeekdayLabel(weekendDays: number[]): string {
-  return formatDaysLabel(getWeekdayDays(weekendDays));
+export function getWeekdayLabel(
+  weekendDays: number[],
+  dayShort: (day: number) => string = defaultDayShort,
+): string {
+  return formatDaysLabel(getWeekdayDays(weekendDays), dayShort);
 }
 
-export function getWeekendLabel(weekendDays: number[]): string {
-  return formatDaysLabel(weekendDays);
+export function getWeekendLabel(
+  weekendDays: number[],
+  dayShort: (day: number) => string = defaultDayShort,
+): string {
+  return formatDaysLabel(weekendDays, dayShort);
 }
 
 /** Parse dd/mm/yyyy. Legacy yyyy-mm-dd also accepted. */
@@ -139,6 +153,86 @@ export interface StayNightBreakdown {
   weekendNights: number;
 }
 
+/** Extra guests beyond room capacity (adults counted first, then children). */
+export function countExtraGuests(
+  capacity: number,
+  adults: number,
+  children: number,
+): { extraAdults: number; extraChildren: number } {
+  const includedAdults = Math.min(adults, capacity);
+  const remainingCapacity = capacity - includedAdults;
+  const includedChildren = Math.min(children, remainingCapacity);
+  return {
+    extraAdults: adults - includedAdults,
+    extraChildren: children - includedChildren,
+  };
+}
+
+export interface SingleRoomBreakdown {
+  roomBaseSubtotal: number;
+  extraAdultSubtotal: number;
+  extraChildSubtotal: number;
+  subtotal: number;
+  weekdayNights: number;
+  weekendNights: number;
+  extraAdults: number;
+  extraChildren: number;
+  adults: number;
+  children: number;
+}
+
+export function calculateSingleRoomStay(
+  room: Room,
+  checkIn: string,
+  checkOut: string,
+  adults: number,
+  children: number,
+  weekendDays: number[],
+): SingleRoomBreakdown | null {
+  const nights = getStayNights(checkIn, checkOut);
+  if (!nights) return null;
+
+  const { extraAdults, extraChildren } = countExtraGuests(
+    room.capacity,
+    adults,
+    children,
+  );
+
+  let roomBaseSubtotal = 0;
+  let extraAdultSubtotal = 0;
+  let extraChildSubtotal = 0;
+  let weekdayNights = 0;
+  let weekendNights = 0;
+
+  for (const night of nights) {
+    const isWeekend = isWeekendNight(night, weekendDays, nights);
+    if (isWeekend) weekendNights += 1;
+    else weekdayNights += 1;
+
+    roomBaseSubtotal += getNightRate(room, night, weekendDays, nights);
+    extraAdultSubtotal +=
+      extraAdults *
+      (isWeekend ? room.extraAdultWeekendPrice : room.extraAdultWeekdayPrice);
+    extraChildSubtotal +=
+      extraChildren *
+      (isWeekend ? room.extraChildWeekendPrice : room.extraChildWeekdayPrice);
+  }
+
+  return {
+    roomBaseSubtotal,
+    extraAdultSubtotal,
+    extraChildSubtotal,
+    subtotal: roomBaseSubtotal + extraAdultSubtotal + extraChildSubtotal,
+    weekdayNights,
+    weekendNights,
+    extraAdults,
+    extraChildren,
+    adults,
+    children,
+  };
+}
+
+/** @deprecated Use calculateSingleRoomStay for per-room bookings */
 export function calculateStayForRooms(
   room: Room,
   checkIn: string,

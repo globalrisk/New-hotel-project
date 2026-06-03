@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom';
+import { useLanguage } from '../context/LanguageContext';
+import type { Language } from '../i18n/types';
 import '../styles/components/Header.css';
 
 function navClassName({ isActive }: { isActive: boolean }) {
@@ -6,34 +8,49 @@ function navClassName({ isActive }: { isActive: boolean }) {
 }
 
 export default function Header() {
+  const { language, setLanguage, t } = useLanguage();
+
   return (
     <header className="header">
       <div className="container">
         <div className="logo">
-          <h1>🏨 Luxury Hotel</h1>
+          <h1>Coto Queen</h1>
         </div>
         <nav className="nav">
           <NavLink to="/" end className={navClassName}>
-            Home
+            {t('nav.home')}
           </NavLink>
           <NavLink to="/rooms" className={navClassName}>
-            Rooms
+            {t('nav.rooms')}
           </NavLink>
           <NavLink to="/calculate-rooms-price" className={navClassName}>
-            Calculate Rooms Price
+            {t('nav.calculate')}
           </NavLink>
           <NavLink to="/admin/room-prices" className={navClassName}>
-            Manage Prices
+            {t('nav.managePrices')}
           </NavLink>
           <NavLink to="/gallery" className={navClassName}>
-            Gallery
+            {t('nav.gallery')}
           </NavLink>
           <NavLink to="/about" className={navClassName}>
-            About
+            {t('nav.about')}
           </NavLink>
           <NavLink to="/contact" className={navClassName}>
-            Contact
+            {t('nav.contact')}
           </NavLink>
+          <div className="lang-switcher" role="group" aria-label={t('lang.label')}>
+            {(['vi', 'en'] as Language[]).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                className={`lang-btn ${language === lang ? 'lang-btn-active' : ''}`}
+                onClick={() => setLanguage(lang)}
+                aria-pressed={language === lang}
+              >
+                {t(`lang.${lang}`)}
+              </button>
+            ))}
+          </div>
         </nav>
       </div>
     </header>

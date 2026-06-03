@@ -4,7 +4,7 @@ export default function About() {
   return (
     <div className="about">
       <div className="about-header">
-        <h1>About Luxury Hotel</h1>
+        <h1>About Coto Queen</h1>
         <p>Our Story and Values</p>
       </div>
 
@@ -13,7 +13,7 @@ export default function About() {
         <section className="about-section">
           <h2>Our Story</h2>
           <p>
-            Founded in 2000, Luxury Hotel has been a beacon of hospitality and excellence for over two decades.
+            Founded in 2000, Coto Queen has been a beacon of hospitality and excellence for over two decades.
             What started as a small boutique hotel has grown into one of the most prestigious hospitality brands
             in the region, known for its commitment to exceptional service and luxurious comfort.
           </p>

@@ -13,30 +13,39 @@ import { normalizeWeekendDays } from '../utils/pricing';
 const ROOM_PRICES_STORAGE_KEY = 'luxury-hotel-room-prices';
 const WEEKEND_DAYS_STORAGE_KEY = 'luxury-hotel-weekend-days';
 
-type StoredPrices = Record<
-  number,
-  { weekdayPrice: number; weekendPrice: number }
+export type RoomSettings = Pick<
+  Room,
+  | 'capacity'
+  | 'weekdayPrice'
+  | 'weekendPrice'
+  | 'extraAdultWeekdayPrice'
+  | 'extraAdultWeekendPrice'
+  | 'extraChildWeekdayPrice'
+  | 'extraChildWeekendPrice'
 >;
+
+/** @deprecated Use RoomSettings */
+export type RoomPriceFields = RoomSettings;
+
+type StoredRoomSettings = Record<number, RoomSettings>;
 
 interface RoomsContextValue {
   rooms: Room[];
   weekendDays: number[];
-  updateRoomPrices: (
-    roomId: number,
-    weekdayPrice: number,
-    weekendPrice: number,
-  ) => void;
+  updateRoomSettings: (roomId: number, settings: RoomSettings) => void;
+  /** @deprecated Use updateRoomSettings */
+  updateRoomPrices: (roomId: number, settings: RoomSettings) => void;
   updateWeekendDays: (days: number[]) => void;
   resetRoomPrices: () => void;
 }
 
 const RoomsContext = createContext<RoomsContextValue | null>(null);
 
-function loadStoredPrices(): StoredPrices {
+function loadStoredPrices(): StoredRoomSettings {
   try {
     const raw = localStorage.getItem(ROOM_PRICES_STORAGE_KEY);
     if (!raw) return {};
-    return JSON.parse(raw) as StoredPrices;
+    return JSON.parse(raw) as StoredRoomSettings;
   } catch {
     return {};
   }
@@ -54,24 +63,40 @@ function loadStoredWeekendDays(): number[] {
   }
 }
 
-function mergeRoomsWithStored(stored: StoredPrices): Room[] {
-  return defaultRooms.map((room) => {
-    const override = stored[room.id];
-    if (!override) return { ...room };
-    return {
-      ...room,
-      weekdayPrice: override.weekdayPrice,
-      weekendPrice: override.weekendPrice,
-    };
-  });
+function mergeRoomWithDefaults(room: Room, override?: Partial<RoomSettings>): Room {
+  const base = defaultRooms.find((r) => r.id === room.id);
+  const defaults = base ?? room;
+  return {
+    ...room,
+    capacity: override?.capacity ?? defaults.capacity,
+    weekdayPrice: override?.weekdayPrice ?? defaults.weekdayPrice,
+    weekendPrice: override?.weekendPrice ?? defaults.weekendPrice,
+    extraAdultWeekdayPrice:
+      override?.extraAdultWeekdayPrice ?? defaults.extraAdultWeekdayPrice,
+    extraAdultWeekendPrice:
+      override?.extraAdultWeekendPrice ?? defaults.extraAdultWeekendPrice,
+    extraChildWeekdayPrice:
+      override?.extraChildWeekdayPrice ?? defaults.extraChildWeekdayPrice,
+    extraChildWeekendPrice:
+      override?.extraChildWeekendPrice ?? defaults.extraChildWeekendPrice,
+  };
+}
+
+function mergeRoomsWithStored(stored: StoredRoomSettings): Room[] {
+  return defaultRooms.map((room) => mergeRoomWithDefaults(room, stored[room.id]));
 }
 
 function persistPrices(rooms: Room[]) {
-  const stored: StoredPrices = {};
+  const stored: StoredRoomSettings = {};
   for (const room of rooms) {
     stored[room.id] = {
+      capacity: room.capacity,
       weekdayPrice: room.weekdayPrice,
       weekendPrice: room.weekendPrice,
+      extraAdultWeekdayPrice: room.extraAdultWeekdayPrice,
+      extraAdultWeekendPrice: room.extraAdultWeekendPrice,
+      extraChildWeekdayPrice: room.extraChildWeekdayPrice,
+      extraChildWeekendPrice: room.extraChildWeekendPrice,
     };
   }
   localStorage.setItem(ROOM_PRICES_STORAGE_KEY, JSON.stringify(stored));
@@ -89,18 +114,15 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     loadStoredWeekendDays(),
   );
 
-  const updateRoomPrices = useCallback(
-    (roomId: number, weekdayPrice: number, weekendPrice: number) => {
-      setRooms((prev) => {
-        const next = prev.map((room) =>
-          room.id === roomId ? { ...room, weekdayPrice, weekendPrice } : room,
-        );
-        persistPrices(next);
-        return next;
-      });
-    },
-    [],
-  );
+  const updateRoomSettings = useCallback((roomId: number, settings: RoomSettings) => {
+    setRooms((prev) => {
+      const next = prev.map((room) =>
+        room.id === roomId ? { ...room, ...settings } : room,
+      );
+      persistPrices(next);
+      return next;
+    });
+  }, []);
 
   const updateWeekendDays = useCallback((days: number[]) => {
     const normalized = normalizeWeekendDays(days);
@@ -121,11 +143,12 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     () => ({
       rooms,
       weekendDays,
-      updateRoomPrices,
+      updateRoomSettings,
+      updateRoomPrices: updateRoomSettings,
       updateWeekendDays,
       resetRoomPrices,
     }),
-    [rooms, weekendDays, updateRoomPrices, updateWeekendDays, resetRoomPrices],
+    [rooms, weekendDays, updateRoomSettings, updateWeekendDays, resetRoomPrices],
   );
 
   return <RoomsContext.Provider value={value}>{children}</RoomsContext.Provider>;

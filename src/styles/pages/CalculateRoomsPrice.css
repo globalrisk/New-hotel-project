@@ -201,6 +201,22 @@
   gap: 1rem;
   font-size: 0.95rem;
   color: #666;
+  margin-bottom: 0.35rem;
+}
+
+.price-line-item-breakdown {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: #555;
+  padding-left: 0.5rem;
+}
+
+.form-hint-extra {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .price-summary-totals {

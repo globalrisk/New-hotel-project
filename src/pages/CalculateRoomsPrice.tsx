@@ -1,31 +1,25 @@
 import { useState } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
 import { formatVnd } from '../utils/currency';
 import { formatDdMmYyyy, startOfDay, todayIso } from '../utils/date';
 import {
-  calculateStayForRooms,
-  formatRoomPriceLabel,
+  calculateSingleRoomStay,
   getStayNights,
-  getWeekdayLabel,
-  getWeekendLabel,
   parseLocalDate,
+  type SingleRoomBreakdown,
 } from '../utils/pricing';
 import '../styles/pages/CalculateRoomsPrice.css';
 
 interface RoomLine {
   id: string;
   roomId: string;
-  quantity: string;
-  guests: string;
+  adults: string;
+  children: string;
 }
 
-interface LineResult {
-  roomName: string;
-  quantity: number;
-  guests: number;
-  weekdayNights: number;
-  weekendNights: number;
-  lineSubtotal: number;
+interface LineResult extends SingleRoomBreakdown {
+  roomId: number;
 }
 
 interface PriceResult {
@@ -38,13 +32,14 @@ function createRoomLine(firstRoomId: number): RoomLine {
   return {
     id: crypto.randomUUID(),
     roomId: String(firstRoomId),
-    quantity: '1',
-    guests: '1',
+    adults: '1',
+    children: '0',
   };
 }
 
 export default function CalculateRoomsPrice() {
   const { rooms, weekendDays } = useRooms();
+  const { t, getWeekdayLabel, getWeekendLabel, roomName } = useLanguage();
   const weekdayLabel = getWeekdayLabel(weekendDays);
   const weekendLabel = getWeekendLabel(weekendDays);
   const [roomLines, setRoomLines] = useState<RoomLine[]>(() => [
@@ -56,7 +51,8 @@ export default function CalculateRoomsPrice() {
   const [result, setResult] = useState<PriceResult | null>(null);
 
   const today = todayIso();
-  const checkInDisplay = checkIn && parseLocalDate(checkIn) ? formatDdMmYyyy(parseLocalDate(checkIn)!) : '';
+  const checkInDisplay =
+    checkIn && parseLocalDate(checkIn) ? formatDdMmYyyy(parseLocalDate(checkIn)!) : '';
   const checkOutDisplay =
     checkOut && parseLocalDate(checkOut) ? formatDdMmYyyy(parseLocalDate(checkOut)!) : '';
 
@@ -86,19 +82,19 @@ export default function CalculateRoomsPrice() {
     const checkOutDate = parseLocalDate(checkOut);
 
     if (!checkInDate || !checkOutDate) {
-      setError('Chọn ngày nhận phòng và ngày trả phòng từ lịch.');
+      setError(t('calculator.errors.pickDates'));
       return;
     }
 
     const todayStart = startOfDay(new Date());
     if (checkInDate < todayStart) {
-      setError('Ngày nhận phòng không được là ngày trong quá khứ.');
+      setError(t('calculator.errors.pastCheckIn'));
       return;
     }
 
     const stayNights = getStayNights(checkIn, checkOut);
     if (!stayNights) {
-      setError('Ngày trả phòng phải sau ngày nhận phòng.');
+      setError(t('calculator.errors.checkOutAfter'));
       return;
     }
 
@@ -109,60 +105,57 @@ export default function CalculateRoomsPrice() {
       const room = rooms.find((r) => r.id === Number(line.roomId));
       if (!room) continue;
 
-      const quantity = Number(line.quantity);
-      const guests = Number(line.guests);
-      const maxGuests = quantity * room.capacity;
+      const adults = Number(line.adults);
+      const children = Number(line.children);
+      const roomIndex = i + 1;
 
-      if (!Number.isInteger(quantity) || quantity < 1) {
-        setError(`Room ${i + 1}: enter at least 1 room.`);
+      if (!Number.isInteger(adults) || adults < 0) {
+        setError(t('calculator.errors.invalidAdults', { index: roomIndex }));
         return;
       }
 
-      if (!Number.isInteger(guests) || guests < 1) {
-        setError(`Room ${i + 1}: enter at least 1 guest.`);
+      if (!Number.isInteger(children) || children < 0) {
+        setError(t('calculator.errors.invalidChildren', { index: roomIndex }));
         return;
       }
 
-      if (guests > maxGuests) {
-        setError(
-          `Room ${i + 1}: ${room.name} fits up to ${room.capacity} guest${room.capacity === 1 ? '' : 's'} per room (${maxGuests} total for ${quantity} room${quantity === 1 ? '' : 's'}).`,
-        );
+      if (adults + children < 1) {
+        setError(t('calculator.errors.minGuests', { index: roomIndex }));
         return;
       }
 
-      const breakdown = calculateStayForRooms(
+      const breakdown = calculateSingleRoomStay(
         room,
         checkIn,
         checkOut,
-        quantity,
+        adults,
+        children,
         weekendDays,
       );
       if (!breakdown) {
-        setError('Check-out must be after check-in. Please select valid dates.');
+        setError(t('calculator.errors.checkOutAfter'));
         return;
       }
 
       lineResults.push({
-        roomName: room.name,
-        quantity,
-        guests,
-        weekdayNights: breakdown.weekdayNights,
-        weekendNights: breakdown.weekendNights,
-        lineSubtotal: breakdown.subtotal,
+        roomId: room.id,
+        ...breakdown,
       });
     }
 
-    const total = lineResults.reduce((sum, line) => sum + line.lineSubtotal, 0);
-
+    const total = lineResults.reduce((sum, line) => sum + line.subtotal, 0);
     setResult({ nights: stayNights.length, lines: lineResults, total });
   };
 
   return (
     <div className="calculate-price">
       <div className="calculate-price-header">
-        <h1>Calculate Rooms Price</h1>
+        <h1>{t('calculator.title')}</h1>
         <p>
-          Weekday rates ({weekdayLabel}); weekend rates ({weekendLabel}) — per night of your stay
+          {t('calculator.subtitle', {
+            weekday: weekdayLabel,
+            weekend: weekendLabel,
+          })}
         </p>
       </div>
 
@@ -170,10 +163,10 @@ export default function CalculateRoomsPrice() {
         <div className="calculate-price-card">
           <form onSubmit={handleCalculate} className="calculate-price-form">
             <fieldset className="stay-dates">
-              <legend>Stay dates</legend>
+              <legend>{t('calculator.stayDates')}</legend>
               <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="checkIn">Check-in</label>
+                  <label htmlFor="checkIn">{t('calculator.checkIn')}</label>
                   <input
                     type="date"
                     id="checkIn"
@@ -185,12 +178,10 @@ export default function CalculateRoomsPrice() {
                     }}
                     required
                   />
-                  {checkInDisplay && (
-                    <span className="form-hint">{checkInDisplay}</span>
-                  )}
+                  {checkInDisplay && <span className="form-hint">{checkInDisplay}</span>}
                 </div>
                 <div className="form-group">
-                  <label htmlFor="checkOut">Check-out</label>
+                  <label htmlFor="checkOut">{t('calculator.checkOut')}</label>
                   <input
                     type="date"
                     id="checkOut"
@@ -202,44 +193,42 @@ export default function CalculateRoomsPrice() {
                     }}
                     required
                   />
-                  {checkOutDisplay && (
-                    <span className="form-hint">{checkOutDisplay}</span>
-                  )}
+                  {checkOutDisplay && <span className="form-hint">{checkOutDisplay}</span>}
                 </div>
               </div>
             </fieldset>
 
             <div className="room-lines">
               <div className="room-lines-header">
-                <h2>Rooms</h2>
+                <h2>{t('calculator.roomsSection')}</h2>
                 <button type="button" className="btn btn-secondary btn-add-room" onClick={addRoomLine}>
-                  + Add another room type
+                  {t('calculator.addRoom')}
                 </button>
               </div>
 
               {roomLines.map((line, index) => {
                 const room = rooms.find((r) => r.id === Number(line.roomId)) ?? rooms[0];
-                const quantity = Math.max(1, Number(line.quantity) || 1);
-                const maxGuests = quantity * room.capacity;
 
                 return (
                   <div key={line.id} className="room-line">
                     <div className="room-line-title">
-                      <span>Room {index + 1}</span>
+                      <span>
+                        {t('common.room')} {index + 1}
+                      </span>
                       {roomLines.length > 1 && (
                         <button
                           type="button"
                           className="btn-remove-line"
                           onClick={() => removeRoomLine(line.id)}
-                          aria-label={`Remove room ${index + 1}`}
+                          aria-label={t('common.remove')}
                         >
-                          Remove
+                          {t('common.remove')}
                         </button>
                       )}
                     </div>
 
                     <div className="form-group">
-                      <label htmlFor={`room-${line.id}`}>Room type</label>
+                      <label htmlFor={`room-${line.id}`}>{t('calculator.roomType')}</label>
                       <select
                         id={`room-${line.id}`}
                         value={line.roomId}
@@ -247,41 +236,48 @@ export default function CalculateRoomsPrice() {
                       >
                         {rooms.map((r) => (
                           <option key={r.id} value={r.id}>
-                            {r.name} — {formatRoomPriceLabel(r, weekendDays)}
+                            {roomName(r.id)}
                           </option>
                         ))}
                       </select>
+                      <span className="form-hint">
+                        {t('calculator.capacityHint', { count: room.capacity })}
+                      </span>
                     </div>
 
                     <div className="form-row">
                       <div className="form-group">
-                        <label htmlFor={`qty-${line.id}`}>Number of rooms</label>
+                        <label htmlFor={`adults-${line.id}`}>{t('calculator.adults')}</label>
                         <input
                           type="number"
-                          id={`qty-${line.id}`}
-                          min={1}
-                          max={10}
-                          value={line.quantity}
-                          onChange={(e) => updateLine(line.id, 'quantity', e.target.value)}
+                          id={`adults-${line.id}`}
+                          min={0}
+                          value={line.adults}
+                          onChange={(e) => updateLine(line.id, 'adults', e.target.value)}
                           required
                         />
                       </div>
                       <div className="form-group">
-                        <label htmlFor={`guests-${line.id}`}>Guests (this room type)</label>
+                        <label htmlFor={`children-${line.id}`}>{t('calculator.children')}</label>
                         <input
                           type="number"
-                          id={`guests-${line.id}`}
-                          min={1}
-                          max={maxGuests}
-                          value={line.guests}
-                          onChange={(e) => updateLine(line.id, 'guests', e.target.value)}
+                          id={`children-${line.id}`}
+                          min={0}
+                          value={line.children}
+                          onChange={(e) => updateLine(line.id, 'children', e.target.value)}
                           required
                         />
-                        <span className="form-hint">
-                          Up to {maxGuests} across {quantity} room{quantity === 1 ? '' : 's'}
-                        </span>
                       </div>
                     </div>
+                    <p className="form-hint form-hint-extra">
+                      {t('calculator.extraHint', {
+                        capacity: room.capacity,
+                        adultWd: formatVnd(room.extraAdultWeekdayPrice),
+                        adultWe: formatVnd(room.extraAdultWeekendPrice),
+                        childWd: formatVnd(room.extraChildWeekdayPrice),
+                        childWe: formatVnd(room.extraChildWeekendPrice),
+                      })}
+                    </p>
                   </div>
                 );
               })}
@@ -290,43 +286,81 @@ export default function CalculateRoomsPrice() {
             {error && <p className="calculate-price-error">{error}</p>}
 
             <button type="submit" className="btn btn-primary">
-              Calculate Price
+              {t('calculator.calculate')}
             </button>
           </form>
 
           {result && (
             <div className="price-summary">
-              <h2>Price estimate</h2>
-              <p className="price-summary-meta">{result.nights} night{result.nights === 1 ? '' : 's'}</p>
+              <h2>{t('calculator.estimate')}</h2>
+              <p className="price-summary-meta">
+                {t('calculator.meta', {
+                  nights: result.nights,
+                  rooms: result.lines.length,
+                })}
+              </p>
 
               <ul className="price-line-items">
                 {result.lines.map((line, index) => (
                   <li key={index} className="price-line-item">
                     <div className="price-line-item-header">
-                      <strong>{line.roomName}</strong>
-                      <span>
-                        × {line.quantity} room{line.quantity === 1 ? '' : 's'}
-                      </span>
+                      <strong>
+                        {t('calculator.roomLine', {
+                          index: index + 1,
+                          name: roomName(line.roomId),
+                        })}
+                      </strong>
+                      <span>{formatVnd(line.subtotal)}</span>
                     </div>
                     <div className="price-line-item-detail">
                       <span>
-                        {line.guests} guest{line.guests === 1 ? '' : 's'}
+                        {t('calculator.guestsSummary', {
+                          adults: line.adults,
+                          children: line.children,
+                        })}
                         {line.weekdayNights > 0 && (
-                          <> · {line.weekdayNights} weekday night{line.weekdayNights === 1 ? '' : 's'}</>
+                          <>
+                            {' '}
+                            ·{' '}
+                            {t('calculator.weekdayNights', { count: line.weekdayNights })}
+                          </>
                         )}
                         {line.weekendNights > 0 && (
-                          <> · {line.weekendNights} weekend night{line.weekendNights === 1 ? '' : 's'}</>
+                          <>
+                            {' '}
+                            ·{' '}
+                            {t('calculator.weekendNights', { count: line.weekendNights })}
+                          </>
                         )}
                       </span>
-                      <span>{formatVnd(line.lineSubtotal)}</span>
                     </div>
+                    <div className="price-line-item-breakdown">
+                      <span>{t('calculator.roomRate')}</span>
+                      <span>{formatVnd(line.roomBaseSubtotal)}</span>
+                    </div>
+                    {line.extraAdults > 0 && (
+                      <div className="price-line-item-breakdown">
+                        <span>
+                          {t('calculator.extraAdults', { count: line.extraAdults })}
+                        </span>
+                        <span>{formatVnd(line.extraAdultSubtotal)}</span>
+                      </div>
+                    )}
+                    {line.extraChildren > 0 && (
+                      <div className="price-line-item-breakdown">
+                        <span>
+                          {t('calculator.extraChildren', { count: line.extraChildren })}
+                        </span>
+                        <span>{formatVnd(line.extraChildSubtotal)}</span>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
 
               <dl className="price-summary-totals">
                 <div className="price-summary-total">
-                  <dt>Tổng cộng</dt>
+                  <dt>{t('calculator.total')}</dt>
                   <dd>{formatVnd(result.total)}</dd>
                 </div>
               </dl>

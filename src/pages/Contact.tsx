@@ -128,7 +128,7 @@ export default function Contact() {
 
             <div className="info-item">
               <h3>📍 Address</h3>
-              <p>123 Luxury Street</p>
+              <p>123 Coto Queen Street</p>
               <p>City Center, State 12345</p>
               <p>Country</p>
             </div>
@@ -143,10 +143,10 @@ export default function Contact() {
             <div className="info-item">
               <h3>📧 Email</h3>
               <p>
-                <a href="mailto:info@luxuryhotel.com">info@luxuryhotel.com</a>
+                <a href="mailto:info@cotoqueen.com">info@cotoqueen.com</a>
               </p>
               <p>
-                <a href="mailto:reservations@luxuryhotel.com">reservations@luxuryhotel.com</a>
+                <a href="mailto:reservations@cotoqueen.com">reservations@cotoqueen.com</a>
               </p>
             </div>
 

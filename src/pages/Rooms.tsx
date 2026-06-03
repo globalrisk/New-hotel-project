@@ -1,17 +1,19 @@
+import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
 import { formatVnd } from '../utils/currency';
-import { getWeekdayLabel, getWeekendLabel } from '../utils/pricing';
 import '../styles/pages/Rooms.css';
 
 export default function Rooms() {
   const { rooms, weekendDays } = useRooms();
+  const { t, getWeekdayLabel, getWeekendLabel, roomName, roomDescription } = useLanguage();
   const weekdayLabel = getWeekdayLabel(weekendDays);
   const weekendLabel = getWeekendLabel(weekendDays);
+
   return (
     <div className="rooms">
       <div className="rooms-header">
-        <h1>Our Rooms</h1>
-        <p>Tổ chim và các loại nhà mộc — giá theo ngày trong tuần và cuối tuần</p>
+        <h1>{t('rooms.title')}</h1>
+        <p>{t('rooms.subtitle')}</p>
       </div>
 
       <div className="container">
@@ -20,26 +22,34 @@ export default function Rooms() {
             <div key={room.id} className="room-card">
               <div className="room-image">
                 <img
-                  src={`https://via.placeholder.com/400x300?text=${room.name}`}
-                  alt={room.name}
+                  src={`https://via.placeholder.com/400x300?text=${encodeURIComponent(roomName(room.id))}`}
+                  alt={roomName(room.id)}
                 />
               </div>
               <div className="room-content">
-                <h2>{room.name}</h2>
-                <p className="description">{room.description}</p>
+                <h2>{roomName(room.id)}</h2>
+                <p className="description">{roomDescription(room.id)}</p>
 
                 <div className="room-info">
-                  <span className="capacity">👥 Tối đa {room.capacity} khách</span>
+                  <span className="capacity">
+                    👥 {t('rooms.maxGuests', { count: room.capacity })}
+                  </span>
                   <div className="price-rates">
-                    <span className="price">{formatVnd(room.weekdayPrice)}/đêm</span>
+                    <span className="price">
+                      {formatVnd(room.weekdayPrice)}
+                      {t('common.perNight')}
+                    </span>
                     <span className="price-label">{weekdayLabel}</span>
-                    <span className="price price-weekend">{formatVnd(room.weekendPrice)}/đêm</span>
+                    <span className="price price-weekend">
+                      {formatVnd(room.weekendPrice)}
+                      {t('common.perNight')}
+                    </span>
                     <span className="price-label">{weekendLabel}</span>
                   </div>
                 </div>
 
                 <div className="amenities">
-                  <h4>Amenities:</h4>
+                  <h4>{t('rooms.amenities')}</h4>
                   <ul>
                     {room.amenities.map((amenity, idx) => (
                       <li key={idx}>✓ {amenity}</li>
@@ -47,7 +57,9 @@ export default function Rooms() {
                   </ul>
                 </div>
 
-                <button className="btn btn-primary">Book Now</button>
+                <button type="button" className="btn btn-primary">
+                  {t('rooms.bookNow')}
+                </button>
               </div>
             </div>
           ))}
