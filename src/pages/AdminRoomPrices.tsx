@@ -4,6 +4,7 @@ import { DEFAULT_WEEKEND_DAYS } from '../config/pricingDefaults';
 import { useLanguage } from '../context/LanguageContext';
 import { useRooms, type RoomSettings } from '../context/RoomsContext';
 import type { Room } from '../data/rooms';
+import { formatPriceInput, parsePriceInput } from '../utils/currency';
 import '../styles/pages/AdminRoomPrices.css';
 
 type RoomDraft = Record<keyof RoomSettings, string>;
@@ -229,11 +230,12 @@ export default function AdminRoomPrices() {
                       {priceFields.map(({ key }) => (
                         <td key={key}>
                           <input
-                            type="number"
-                            min={0}
-                            step={50000}
-                            value={drafts[room.id][key]}
-                            onChange={(e) => updateDraft(room.id, key, e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            value={formatPriceInput(drafts[room.id][key])}
+                            onChange={(e) =>
+                              updateDraft(room.id, key, parsePriceInput(e.target.value))
+                            }
                             required
                           />
                         </td>

@@ -10,6 +10,7 @@ import Gallery from './pages/Gallery';
 import Contact from './pages/Contact';
 import CalculateRoomsPrice from './pages/CalculateRoomsPrice';
 import AdminRoomPrices from './pages/AdminRoomPrices';
+import RoomManagement from './pages/RoomManagement';
 import './App.css';
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/gallery" element={<Gallery />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/admin/room-prices" element={<AdminRoomPrices />} />
+              <Route path="/admin/rooms" element={<RoomManagement />} />
             </Routes>
           </main>
           <Footer />

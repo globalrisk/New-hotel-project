@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
 import { formatVnd } from '../utils/currency';
+import { generateId } from '../utils/id';
 import { formatDdMmYyyy, startOfDay, todayIso } from '../utils/date';
 import {
   calculateSingleRoomStay,
@@ -30,7 +31,7 @@ interface PriceResult {
 
 function createRoomLine(firstRoomId: number): RoomLine {
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     roomId: String(firstRoomId),
     adults: '1',
     children: '0',

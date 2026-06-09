@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -9,6 +10,13 @@ import {
 import { defaultRooms, type Room } from '../data/rooms';
 import { DEFAULT_WEEKEND_DAYS } from '../config/pricingDefaults';
 import { normalizeWeekendDays } from '../utils/pricing';
+import {
+  fetchRoomSettings,
+  fetchWeekendDays,
+  saveRoomSettings,
+  saveWeekendDays,
+} from '../lib/roomSettingsApi';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 const ROOM_PRICES_STORAGE_KEY = 'luxury-hotel-room-prices';
 const WEEKEND_DAYS_STORAGE_KEY = 'luxury-hotel-weekend-days';
@@ -86,18 +94,22 @@ function mergeRoomsWithStored(stored: StoredRoomSettings): Room[] {
   return defaultRooms.map((room) => mergeRoomWithDefaults(room, stored[room.id]));
 }
 
+function settingsFromRoom(room: Room): RoomSettings {
+  return {
+    capacity: room.capacity,
+    weekdayPrice: room.weekdayPrice,
+    weekendPrice: room.weekendPrice,
+    extraAdultWeekdayPrice: room.extraAdultWeekdayPrice,
+    extraAdultWeekendPrice: room.extraAdultWeekendPrice,
+    extraChildWeekdayPrice: room.extraChildWeekdayPrice,
+    extraChildWeekendPrice: room.extraChildWeekendPrice,
+  };
+}
+
 function persistPrices(rooms: Room[]) {
   const stored: StoredRoomSettings = {};
   for (const room of rooms) {
-    stored[room.id] = {
-      capacity: room.capacity,
-      weekdayPrice: room.weekdayPrice,
-      weekendPrice: room.weekendPrice,
-      extraAdultWeekdayPrice: room.extraAdultWeekdayPrice,
-      extraAdultWeekendPrice: room.extraAdultWeekendPrice,
-      extraChildWeekdayPrice: room.extraChildWeekdayPrice,
-      extraChildWeekendPrice: room.extraChildWeekendPrice,
-    };
+    stored[room.id] = settingsFromRoom(room);
   }
   localStorage.setItem(ROOM_PRICES_STORAGE_KEY, JSON.stringify(stored));
 }
@@ -114,6 +126,39 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     loadStoredWeekendDays(),
   );
 
+  // Load shared settings from Supabase; localStorage stays as cache/fallback.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const [remoteSettings, remoteWeekendDays] = await Promise.all([
+        fetchRoomSettings(),
+        fetchWeekendDays(),
+      ]);
+      if (cancelled) return;
+
+      if (remoteSettings && Object.keys(remoteSettings).length > 0) {
+        const next = mergeRoomsWithStored(remoteSettings);
+        setRooms(next);
+        persistPrices(next);
+      }
+
+      if (remoteWeekendDays) {
+        const normalized = normalizeWeekendDays(remoteWeekendDays);
+        if (normalized.length > 0 && normalized.length < 7) {
+          setWeekendDays(normalized);
+          persistWeekendDays(normalized);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const updateRoomSettings = useCallback((roomId: number, settings: RoomSettings) => {
     setRooms((prev) => {
       const next = prev.map((room) =>
@@ -122,6 +167,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       persistPrices(next);
       return next;
     });
+    void saveRoomSettings(roomId, settings);
   }, []);
 
   const updateWeekendDays = useCallback((days: number[]) => {
@@ -130,6 +176,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
 
     setWeekendDays(normalized);
     persistWeekendDays(normalized);
+    void saveWeekendDays(normalized);
   }, []);
 
   const resetRoomPrices = useCallback(() => {
@@ -137,6 +184,12 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(WEEKEND_DAYS_STORAGE_KEY);
     setRooms(defaultRooms.map((room) => ({ ...room })));
     setWeekendDays([...DEFAULT_WEEKEND_DAYS]);
+
+    // Push defaults to Supabase so every visitor sees the reset too.
+    for (const room of defaultRooms) {
+      void saveRoomSettings(room.id, settingsFromRoom(room));
+    }
+    void saveWeekendDays([...DEFAULT_WEEKEND_DAYS]);
   }, []);
 
   const value = useMemo(

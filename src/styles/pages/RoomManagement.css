@@ -1,0 +1,428 @@
+.room-manage {
+  min-height: 100vh;
+}
+
+.room-manage-header {
+  background: linear-gradient(135deg, rgba(139, 115, 85, 0.9) 0%, rgba(212, 175, 55, 0.9) 100%);
+  color: white;
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.room-manage-header h1 {
+  color: white;
+  margin-bottom: 0.5rem;
+}
+
+.room-manage-header p {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.1rem;
+}
+
+.room-manage-content {
+  padding: 3rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Use almost the full screen width on this page (the site default is 1200px). */
+.room-manage .container {
+  max-width: min(1800px, 96vw);
+}
+
+.room-manage-section {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Occupancy grid + booking form side by side */
+
+.room-manage-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 500px;
+  gap: 2rem;
+  align-items: start;
+}
+
+.room-manage-form-col {
+  position: sticky;
+  top: 1rem;
+}
+
+@media (min-width: 1101px) {
+  .room-manage-form-col .booking-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .room-manage-form-col .booking-form-grid label:nth-child(1),
+  .room-manage-form-col .booking-form-grid label:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1100px) {
+  .room-manage-main {
+    grid-template-columns: 1fr;
+  }
+
+  .room-manage-form-col {
+    position: static;
+  }
+}
+
+.room-manage-section h2 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  text-align: left;
+  color: var(--primary-color);
+}
+
+/* Toolbar */
+
+.room-manage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 2rem;
+  margin-bottom: 1.25rem;
+}
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.month-label {
+  font-weight: 600;
+  color: var(--primary-color);
+  min-width: 9rem;
+  text-align: center;
+}
+
+.btn-month {
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-month:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.occupancy-today {
+  font-weight: 500;
+  color: #555;
+}
+
+.occupancy-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.legend-free {
+  background: #eef3ee;
+  border: 1px solid #cfdccf;
+}
+
+.legend-booked {
+  background: #c98a3d;
+}
+
+/* Occupancy grid */
+
+.occupancy-grid-wrap {
+  overflow-x: auto;
+}
+
+.occupancy-grid {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.occupancy-grid th,
+.occupancy-grid td {
+  border: 1px solid #e3ddd2;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
+.occupancy-grid th.day-col {
+  min-width: 2.1rem;
+  padding: 0.4rem 0.1rem;
+  background: rgba(139, 115, 85, 0.1);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.occupancy-grid .unit-col {
+  position: sticky;
+  left: 0;
+  background: #fbf9f5;
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 500;
+  z-index: 1;
+}
+
+.occupancy-grid thead .unit-col {
+  background: rgba(139, 115, 85, 0.12);
+  color: var(--primary-color);
+}
+
+.type-row td {
+  background: rgba(212, 175, 55, 0.18);
+  color: var(--primary-color);
+  font-weight: 600;
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  position: sticky;
+  left: 0;
+}
+
+.day-cell {
+  height: 2.1rem;
+  cursor: pointer;
+}
+
+.day-cell-free {
+  background: #eef3ee;
+}
+
+.day-cell-free:hover {
+  background: #d8e6d8;
+}
+
+.day-cell-booked {
+  background: #c98a3d;
+}
+
+.day-cell-booked:hover {
+  background: #b5772e;
+}
+
+.occupancy-grid th.day-today {
+  background: var(--primary-color);
+  color: white;
+}
+
+.day-cell-free.day-past {
+  background: #e2e2e2;
+}
+
+.day-cell-free.day-past:hover {
+  background: #d4d4d4;
+}
+
+.day-cell-booked.day-past {
+  background: #cbb49a;
+}
+
+.day-cell-booked.day-past:hover {
+  background: #bda288;
+}
+
+.day-cell.day-today {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+.room-manage-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+/* Booking form */
+
+.booking-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.booking-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #555;
+  text-align: left;
+  min-width: 0;
+}
+
+.booking-form-grid input,
+.booking-form-grid select,
+.booking-form-grid textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.booking-form-grid input:focus,
+.booking-form-grid select:focus,
+.booking-form-grid textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.booking-form-notes {
+  grid-column: 1 / -1;
+}
+
+.booking-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Bookings list */
+
+.bookings-table-wrap {
+  overflow-x: auto;
+}
+
+.bookings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.bookings-table th,
+.bookings-table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.92rem;
+}
+
+.bookings-table th {
+  background: rgba(139, 115, 85, 0.1);
+  color: var(--primary-color);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.booking-notes {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.booking-actions {
+  white-space: nowrap;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  text-decoration: underline;
+}
+
+.btn-link-danger {
+  color: #c0392b;
+}
+
+/* Status messages */
+
+.room-manage-error {
+  color: #c0392b;
+  font-weight: 500;
+  margin: 0 0 1rem;
+}
+
+.room-manage-success {
+  color: #155724;
+  font-weight: 500;
+  margin: 0 0 1rem;
+}
+
+.room-manage-info {
+  color: #666;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .room-manage-content {
+    padding: 1.5rem 0;
+    gap: 1.25rem;
+  }
+
+  .room-manage-section {
+    padding: 1.25rem;
+  }
+
+  .room-manage-header {
+    padding: 2rem 1rem;
+  }
+
+  .room-manage-toolbar {
+    gap: 0.75rem 1.25rem;
+  }
+
+  /* Compact calendar cells so more days fit before scrolling */
+  .occupancy-grid th,
+  .occupancy-grid td {
+    font-size: 0.72rem;
+  }
+
+  .occupancy-grid th.day-col {
+    min-width: 1.6rem;
+    padding: 0.25rem 0.05rem;
+  }
+
+  .day-cell {
+    height: 1.7rem;
+  }
+
+  .occupancy-grid .unit-col {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.75rem;
+  }
+
+  .bookings-table th,
+  .bookings-table td {
+    padding: 0.5rem 0.6rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .booking-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

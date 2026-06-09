@@ -132,6 +132,11 @@ a:hover {
   .container {
     padding: 0 15px;
   }
+
+  /* background-attachment: fixed is broken on iOS Safari */
+  body {
+    background-attachment: scroll;
+  }
 }
 
 @media (max-width: 480px) {
