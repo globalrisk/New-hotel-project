@@ -94,6 +94,25 @@ function cellKey(unitId: string, iso: string): string {
   return `${unitId}|${iso}`;
 }
 
+function selectionMatchesReservation(
+  selected: RoomStay[] | null,
+  reservation: Reservation,
+): boolean {
+  if (!selected || selected.length !== reservation.rooms.length) return false;
+  const byUnit = (stays: RoomStay[]) =>
+    [...stays].sort((a, b) => a.roomUnitId.localeCompare(b.roomUnitId));
+  return byUnit(selected).every(
+    (stay, index) => {
+      const original = byUnit(reservation.rooms)[index];
+      return (
+        stay.roomUnitId === original.roomUnitId &&
+        stay.checkIn === original.checkIn &&
+        stay.checkOut === original.checkOut
+      );
+    },
+  );
+}
+
 export default function RoomManagement() {
   const { t, roomName, getDayLong } = useLanguage();
   const { weekendDays } = useRooms();
@@ -461,13 +480,23 @@ export default function RoomManagement() {
         <section className="room-manage-section room-manage-grid-col">
           <div className="room-manage-toolbar">
             <div className="month-nav">
-              <button type="button" className="btn-month" onClick={() => changeMonth(-1)}>
+              <button
+                type="button"
+                className="btn-month"
+                onClick={() => changeMonth(-1)}
+                aria-label={t('manage.prevMonth')}
+              >
                 ‹
               </button>
               <span className="month-label">
                 {t('manage.monthLabel', { month: month + 1, year })}
               </span>
-              <button type="button" className="btn-month" onClick={() => changeMonth(1)}>
+              <button
+                type="button"
+                className="btn-month btn-month-next"
+                onClick={() => changeMonth(1)}
+                aria-label={t('manage.nextMonth')}
+              >
                 ›
               </button>
             </div>
@@ -659,16 +688,39 @@ export default function RoomManagement() {
                     </li>
                   ))}
                 </ul>
-                <button
-                  type="button"
-                  className="btn-link"
-                  onClick={() => {
-                    clearSelection();
-                    clearStatus();
-                  }}
-                >
-                  {t('manage.clearSelection')}
-                </button>
+                {!form.editingId && (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => {
+                      clearSelection();
+                      clearStatus();
+                    }}
+                  >
+                    {t('manage.clearSelection')}
+                  </button>
+                )}
+                {editingReservation &&
+                  !selectionMatchesReservation(selection, editingReservation) && (
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => {
+                        setSelectionFromReservation(editingReservation);
+                        clearStatus();
+                      }}
+                    >
+                      {t('manage.resetSelection')}
+                    </button>
+                  )}
+              </>
+            ) : (
+              <>
+                <p className="selection-summary-empty">
+                  {form.editingId
+                    ? t('manage.selectionEmptyEdit')
+                    : t('manage.selectionEmpty')}
+                </p>
                 {editingReservation && (
                   <button
                     type="button"
@@ -682,8 +734,6 @@ export default function RoomManagement() {
                   </button>
                 )}
               </>
-            ) : (
-              <p className="selection-summary-empty">{t('manage.selectionEmpty')}</p>
             )}
           </div>
 

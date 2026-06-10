@@ -109,7 +109,10 @@
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background: white;
+  color: var(--primary-color);
   font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition: var(--transition);
 }
@@ -117,6 +120,12 @@
 .btn-month:hover {
   border-color: var(--primary-color);
   color: var(--primary-color);
+}
+
+/* › can render faint on Windows — slight emphasis on next only */
+.btn-month-next {
+  font-size: 1.35rem;
+  font-weight: 700;
 }
 
 .occupancy-today {

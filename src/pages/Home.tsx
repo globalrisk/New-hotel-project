@@ -80,8 +80,8 @@ export default function Home() {
         <div className="container">
           <h2>{t('home.ctaTitle')}</h2>
           <p>{t('home.ctaText')}</p>
-          <Link to="/contact" className="btn btn-primary">
-            {t('home.contactUs')}
+          <Link to="/calculate-rooms-price" className="btn btn-primary">
+            {t('home.calculatePrice')}
           </Link>
         </div>
       </section>

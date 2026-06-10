@@ -11,7 +11,7 @@ export default function Footer() {
       <div className="container">
         <div className="footer-content">
           <div className="footer-section">
-            <h3>{t('footer.about')}</h3>
+            <h3>Coto Queen</h3>
             <p>{t('footer.aboutText')}</p>
           </div>
           <div className="footer-section">
@@ -24,26 +24,12 @@ export default function Footer() {
                 <Link to="/rooms">{t('nav.rooms')}</Link>
               </li>
               <li>
-                <Link to="/about">{t('nav.about')}</Link>
+                <Link to="/calculate-rooms-price">{t('nav.calculate')}</Link>
               </li>
               <li>
-                <Link to="/contact">{t('nav.contact')}</Link>
+                <Link to="/login">{t('nav.login')}</Link>
               </li>
             </ul>
-          </div>
-          <div className="footer-section">
-            <h3>{t('footer.follow')}</h3>
-            <div className="social-links">
-              <a href="#facebook">Facebook</a>
-              <a href="#twitter">Twitter</a>
-              <a href="#instagram">Instagram</a>
-              <a href="#linkedin">LinkedIn</a>
-            </div>
-          </div>
-          <div className="footer-section">
-            <h3>{t('footer.contact')}</h3>
-            <p>📞 +1 (555) 123-4567</p>
-            <p>📧 info@cotoqueen.com</p>
           </div>
         </div>
         <div className="footer-bottom">

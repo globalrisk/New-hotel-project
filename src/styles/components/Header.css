@@ -45,6 +45,14 @@
   color: var(--secondary-color);
 }
 
+.nav-auth-btn {
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
 .lang-switcher {
   display: inline-flex;
   flex-shrink: 0;
