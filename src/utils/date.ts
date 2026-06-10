@@ -66,6 +66,12 @@ export function sanitizeDdMmYyyyInput(value: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+/** 0 = Sunday … 6 = Saturday, from an ISO date string. */
+export function dayOfWeekFromIso(iso: string): number {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+
 export function startOfDay(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);

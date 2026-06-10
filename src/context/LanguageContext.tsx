@@ -35,6 +35,7 @@ interface LanguageContextValue {
   roomName: (roomId: number) => string;
   roomDescription: (roomId: number) => string;
   getDayShort: (day: number) => string;
+  getDayLong: (day: number) => string;
   getWeekdayLabel: (weekendDays: number[]) => string;
   getWeekendLabel: (weekendDays: number[]) => string;
 }
@@ -68,6 +69,14 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     (day: number) => {
       const key = DAY_KEYS[day];
       return key ? t(`days.${key}`) : '';
+    },
+    [t],
+  );
+
+  const getDayLong = useCallback(
+    (day: number) => {
+      const key = DAY_KEYS[day];
+      return key ? t(`daysLong.${key}`) : '';
     },
     [t],
   );
@@ -114,6 +123,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       roomName,
       roomDescription,
       getDayShort,
+      getDayLong,
       getWeekdayLabel,
       getWeekendLabel,
     }),
@@ -124,6 +134,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       roomName,
       roomDescription,
       getDayShort,
+      getDayLong,
       getWeekdayLabel,
       getWeekendLabel,
     ],

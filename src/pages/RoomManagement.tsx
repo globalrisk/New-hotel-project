@@ -1,39 +1,54 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useLanguage } from '../context/LanguageContext';
+import { useRooms } from '../context/RoomsContext';
 import { roomUnits, type RoomUnit } from '../data/roomUnits';
 import { defaultRooms } from '../data/rooms';
 import {
-  createBooking,
-  deleteBooking,
-  fetchBookings,
-  updateBooking,
-  type Booking,
-  type BookingInput,
-} from '../lib/bookingsApi';
-import { formatDdMmYyyy, toIsoDateString, todayIso } from '../utils/date';
+  createReservation,
+  deleteReservation,
+  fetchReservations,
+  updateReservation,
+  type Reservation,
+  type ReservationInput,
+  type RoomStay,
+} from '../lib/reservationsApi';
+import {
+  GUEST_COLOR_PALETTE,
+  resolveReservationColor,
+  suggestGuestColor,
+} from '../utils/guestColor';
+import { dayOfWeekFromIso, formatDdMmYyyy, toIsoDateString, todayIso } from '../utils/date';
 import '../styles/pages/RoomManagement.css';
 
-interface BookingForm {
+interface ReservationForm {
   editingId: string | null;
-  roomUnitId: string;
-  checkIn: string;
-  checkOut: string;
   guestName: string;
   guestPhone: string;
   guests: string;
   notes: string;
+  guestColor: string;
 }
 
-function emptyForm(): BookingForm {
+interface DragState {
+  anchorRow: number;
+  anchorCol: number;
+  row: number;
+  col: number;
+}
+
+interface UnitStay {
+  reservation: Reservation;
+  stay: RoomStay;
+}
+
+function emptyForm(): ReservationForm {
   return {
     editingId: null,
-    roomUnitId: roomUnits[0].id,
-    checkIn: '',
-    checkOut: '',
     guestName: '',
     guestPhone: '',
     guests: '1',
     notes: '',
+    guestColor: '',
   };
 }
 
@@ -47,34 +62,61 @@ function addDaysIso(iso: string, days: number): string {
   return toIsoDateString(new Date(y, m - 1, d + days));
 }
 
-/** A booking occupies night `iso` when checkIn <= iso < checkOut. */
-function coversNight(booking: Booking, iso: string): boolean {
-  return booking.checkIn <= iso && iso < booking.checkOut;
+function diffDays(fromIso: string, toIso: string): number {
+  const [fy, fm, fd] = fromIso.split('-').map(Number);
+  const [ty, tm, td] = toIso.split('-').map(Number);
+  const from = new Date(fy, fm - 1, fd).getTime();
+  const to = new Date(ty, tm - 1, td).getTime();
+  return Math.round((to - from) / 86_400_000);
+}
+
+/** A room stay occupies night `iso` when checkIn <= iso < checkOut. */
+function coversNight(stay: RoomStay, iso: string): boolean {
+  return stay.checkIn <= iso && iso < stay.checkOut;
 }
 
 function rangesOverlap(aIn: string, aOut: string, bIn: string, bOut: string): boolean {
   return aIn < bOut && bIn < aOut;
 }
 
-export default function RoomManagement() {
-  const { t, roomName } = useLanguage();
+/** Overall span of a reservation across all of its rooms. */
+function reservationSpan(reservation: Reservation): { checkIn: string; checkOut: string } {
+  let checkIn = reservation.rooms[0]?.checkIn ?? '';
+  let checkOut = reservation.rooms[0]?.checkOut ?? '';
+  for (const stay of reservation.rooms) {
+    if (stay.checkIn < checkIn) checkIn = stay.checkIn;
+    if (stay.checkOut > checkOut) checkOut = stay.checkOut;
+  }
+  return { checkIn, checkOut };
+}
 
-  const [bookings, setBookings] = useState<Booking[]>([]);
+function cellKey(unitId: string, iso: string): string {
+  return `${unitId}|${iso}`;
+}
+
+export default function RoomManagement() {
+  const { t, roomName, getDayLong } = useLanguage();
+  const { weekendDays } = useRooms();
+
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [monthDate, setMonthDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [form, setForm] = useState<BookingForm>(() => emptyForm());
+  const [form, setForm] = useState<ReservationForm>(() => emptyForm());
+  /** Selected nights as "unitId|iso" — picked directly on the calendar. */
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(() => new Set());
+  const [drag, setDrag] = useState<DragState | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
-    fetchBookings()
+    fetchReservations()
       .then((data) => {
-        if (!cancelled) setBookings(data);
+        if (!cancelled) setReservations(data);
       })
       .catch(() => {
         if (!cancelled) setLoadError(t('manage.errors.loadFailed'));
@@ -108,75 +150,218 @@ export default function RoomManagement() {
     return groups;
   }, []);
 
-  const bookingsByUnit = useMemo(() => {
-    const map = new Map<string, Booking[]>();
-    for (const booking of bookings) {
-      const list = map.get(booking.roomUnitId) ?? [];
-      list.push(booking);
-      map.set(booking.roomUnitId, list);
+  const unitRowIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    roomUnits.forEach((unit, index) => map.set(unit.id, index));
+    return map;
+  }, []);
+
+  const staysByUnit = useMemo(() => {
+    const map = new Map<string, UnitStay[]>();
+    for (const reservation of reservations) {
+      for (const stay of reservation.rooms) {
+        const list = map.get(stay.roomUnitId) ?? [];
+        list.push({ reservation, stay });
+        map.set(stay.roomUnitId, list);
+      }
     }
     return map;
-  }, [bookings]);
+  }, [reservations]);
 
   const today = todayIso();
   const bookedTodayCount = useMemo(
     () =>
       roomUnits.filter((unit) =>
-        (bookingsByUnit.get(unit.id) ?? []).some((b) => coversNight(b, today)),
+        (staysByUnit.get(unit.id) ?? []).some(({ stay }) => coversNight(stay, today)),
       ).length,
-    [bookingsByUnit, today],
+    [staysByUnit, today],
   );
 
-  const monthBookings = useMemo(() => {
+  const monthReservations = useMemo(() => {
     const monthStart = monthDays[0];
     const afterMonthEnd = addDaysIso(monthDays[monthDays.length - 1], 1);
-    return bookings
-      .filter((b) => rangesOverlap(b.checkIn, b.checkOut, monthStart, afterMonthEnd))
-      .sort((a, b) => a.checkIn.localeCompare(b.checkIn));
-  }, [bookings, monthDays]);
+    return reservations
+      .filter((r) =>
+        r.rooms.some((stay) =>
+          rangesOverlap(stay.checkIn, stay.checkOut, monthStart, afterMonthEnd),
+        ),
+      )
+      .sort((a, b) =>
+        reservationSpan(a).checkIn.localeCompare(reservationSpan(b).checkIn),
+      );
+  }, [reservations, monthDays]);
+
+  /** Per-room stays derived from the selected calendar cells (one range per row). */
+  const selection = useMemo((): RoomStay[] | null => {
+    const byUnit = new Map<string, string[]>();
+    for (const key of selectedCells) {
+      const [unitId, iso] = key.split('|');
+      const list = byUnit.get(unitId) ?? [];
+      list.push(iso);
+      byUnit.set(unitId, list);
+    }
+    if (byUnit.size === 0) return null;
+    return roomUnits
+      .filter((unit) => byUnit.has(unit.id))
+      .map((unit) => {
+        const isos = byUnit.get(unit.id)!.sort();
+        return {
+          roomUnitId: unit.id,
+          checkIn: isos[0],
+          checkOut: addDaysIso(isos[isos.length - 1], 1),
+        };
+      });
+  }, [selectedCells]);
 
   const unitLabel = (unitId: string): string => {
     const unit = roomUnits.find((u) => u.id === unitId);
-    if (!unit) return unitId;
-    return `${roomName(unit.roomTypeId)} #${unit.unitNumber}`;
+    return unit?.label ?? unitId;
   };
+
+  const roomsSummary = (reservation: Reservation): string =>
+    reservation.rooms
+      .map(
+        (stay) =>
+          `${unitLabel(stay.roomUnitId)} (${isoToDdMmYyyy(stay.checkIn)} → ${isoToDdMmYyyy(stay.checkOut)})`,
+      )
+      .join(', ');
+
+  const usedColors = useMemo(
+    () =>
+      reservations
+        .filter((r) => r.id !== form.editingId)
+        .map((r) => r.guestColor || resolveReservationColor('', r.id)),
+    [reservations, form.editingId],
+  );
+
+  const suggestedColor = useMemo(
+    () => suggestGuestColor(usedColors, form.editingId ?? 'new'),
+    [usedColors, form.editingId],
+  );
+
+  const activeColor = form.guestColor || suggestedColor;
+
+  const editingReservation = useMemo(
+    () => reservations.find((r) => r.id === form.editingId) ?? null,
+    [reservations, form.editingId],
+  );
+
+  const availableSwatches = useMemo(() => {
+    const used = new Set(usedColors.map((c) => c.trim().toLowerCase()));
+    const active = activeColor.trim().toLowerCase();
+    return GUEST_COLOR_PALETTE.filter(
+      (color) => !used.has(color.toLowerCase()) || color.toLowerCase() === active,
+    );
+  }, [usedColors, activeColor]);
+
+  const reservationColor = (reservation: Reservation): string =>
+    resolveReservationColor(reservation.guestColor, reservation.id);
 
   const clearStatus = () => {
     setMessage('');
     setError('');
   };
 
-  const updateForm = (patch: Partial<BookingForm>) => {
+  const updateForm = (patch: Partial<ReservationForm>) => {
     setForm((prev) => ({ ...prev, ...patch }));
     clearStatus();
   };
 
-  const startNewBooking = (unitId: string, iso: string) => {
-    setForm({
-      ...emptyForm(),
-      roomUnitId: unitId,
-      checkIn: iso,
-      checkOut: addDaysIso(iso, 1),
-    });
+  // --- cell selection (click to toggle, drag to select a block) ---
+
+  const isCellFree = (unitId: string, iso: string): boolean =>
+    !(staysByUnit.get(unitId) ?? []).some(
+      ({ reservation, stay }) =>
+        reservation.id !== form.editingId && coversNight(stay, iso),
+    );
+
+  const rectCells = (state: DragState): string[] => {
+    const [r1, r2] = [
+      Math.min(state.anchorRow, state.row),
+      Math.max(state.anchorRow, state.row),
+    ];
+    const [c1, c2] = [
+      Math.min(state.anchorCol, state.col),
+      Math.max(state.anchorCol, state.col),
+    ];
+    const keys: string[] = [];
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        const unit = roomUnits[r];
+        const iso = monthDays[c];
+        if (unit && iso && isCellFree(unit.id, iso)) {
+          keys.push(cellKey(unit.id, iso));
+        }
+      }
+    }
+    return keys;
+  };
+
+  const previewKeys = useMemo(
+    () => (drag ? new Set(rectCells(drag)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [drag, reservations, monthDays],
+  );
+
+  const startDrag = (row: number, col: number) => {
+    setDrag({ anchorRow: row, anchorCol: col, row, col });
     clearStatus();
   };
 
-  const startEdit = (booking: Booking) => {
+  const extendDrag = (row: number, col: number) => {
+    setDrag((prev) => (prev ? { ...prev, row, col } : prev));
+  };
+
+  useEffect(() => {
+    if (!drag) return;
+    const finish = () => {
+      const keys = rectCells(drag);
+      setSelectedCells((prev) => {
+        const next = new Set(prev);
+        const isSingle = drag.anchorRow === drag.row && drag.anchorCol === drag.col;
+        if (isSingle && keys.length === 1 && next.has(keys[0])) {
+          next.delete(keys[0]);
+        } else {
+          for (const key of keys) next.add(key);
+        }
+        return next;
+      });
+      setDrag(null);
+    };
+    window.addEventListener('mouseup', finish);
+    return () => window.removeEventListener('mouseup', finish);
+  }, [drag]);
+
+  const clearSelection = () => setSelectedCells(new Set());
+
+  // --- form actions ---
+
+  const setSelectionFromReservation = (reservation: Reservation) => {
+    const cells = new Set<string>();
+    for (const stay of reservation.rooms) {
+      for (let iso = stay.checkIn; iso < stay.checkOut; iso = addDaysIso(iso, 1)) {
+        cells.add(cellKey(stay.roomUnitId, iso));
+      }
+    }
+    setSelectedCells(cells);
+  };
+
+  const startEdit = (reservation: Reservation) => {
+    setSelectionFromReservation(reservation);
     setForm({
-      editingId: booking.id,
-      roomUnitId: booking.roomUnitId,
-      checkIn: booking.checkIn,
-      checkOut: booking.checkOut,
-      guestName: booking.guestName,
-      guestPhone: booking.guestPhone,
-      guests: String(booking.guests),
-      notes: booking.notes,
+      editingId: reservation.id,
+      guestName: reservation.guestName,
+      guestPhone: reservation.guestPhone,
+      guests: String(reservation.guests),
+      notes: reservation.notes,
+      guestColor: reservation.guestColor || resolveReservationColor('', reservation.id),
     });
     clearStatus();
   };
 
   const cancelEdit = () => {
     setForm(emptyForm());
+    clearSelection();
     clearStatus();
   };
 
@@ -184,16 +369,12 @@ export default function RoomManagement() {
     e.preventDefault();
     clearStatus();
 
+    if (!selection) {
+      setError(t('manage.errors.selectCells'));
+      return;
+    }
     if (!form.guestName.trim()) {
       setError(t('manage.errors.name'));
-      return;
-    }
-    if (!form.checkIn || !form.checkOut) {
-      setError(t('manage.errors.dates'));
-      return;
-    }
-    if (form.checkOut <= form.checkIn) {
-      setError(t('manage.errors.checkOutAfter'));
       return;
     }
     const guests = Number(form.guests);
@@ -202,56 +383,62 @@ export default function RoomManagement() {
       return;
     }
 
-    const conflict = bookings.find(
-      (b) =>
-        b.roomUnitId === form.roomUnitId &&
-        b.id !== form.editingId &&
-        rangesOverlap(b.checkIn, b.checkOut, form.checkIn, form.checkOut),
-    );
-    if (conflict) {
-      setError(
-        t('manage.errors.overlap', {
-          room: unitLabel(conflict.roomUnitId),
-          name: conflict.guestName,
-          from: isoToDdMmYyyy(conflict.checkIn),
-          to: isoToDdMmYyyy(conflict.checkOut),
-        }),
+    for (const stay of selection) {
+      const conflict = (staysByUnit.get(stay.roomUnitId) ?? []).find(
+        ({ reservation, stay: other }) =>
+          reservation.id !== form.editingId &&
+          rangesOverlap(other.checkIn, other.checkOut, stay.checkIn, stay.checkOut),
       );
-      return;
+      if (conflict) {
+        setError(
+          t('manage.errors.overlap', {
+            room: unitLabel(stay.roomUnitId),
+            name: conflict.reservation.guestName,
+            from: isoToDdMmYyyy(conflict.stay.checkIn),
+            to: isoToDdMmYyyy(conflict.stay.checkOut),
+          }),
+        );
+        return;
+      }
     }
 
-    const input: BookingInput = {
-      roomUnitId: form.roomUnitId,
-      checkIn: form.checkIn,
-      checkOut: form.checkOut,
+    const input: ReservationInput = {
+      rooms: selection,
       guestName: form.guestName.trim(),
       guestPhone: form.guestPhone.trim(),
       guests,
       notes: form.notes.trim(),
+      guestColor: activeColor,
     };
 
     try {
       if (form.editingId) {
-        const saved = await updateBooking(form.editingId, input);
-        setBookings((prev) => prev.map((b) => (b.id === saved.id ? saved : b)));
+        const saved = await updateReservation(form.editingId, input);
+        setReservations((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
       } else {
-        const saved = await createBooking(input);
-        setBookings((prev) => [...prev, saved]);
+        const saved = await createReservation(input);
+        setReservations((prev) => [...prev, saved]);
       }
       setForm(emptyForm());
+      clearSelection();
       setMessage(t('manage.saved'));
     } catch {
       setError(t('manage.errors.saveFailed'));
     }
   };
 
-  const handleDelete = async (booking: Booking) => {
-    if (!window.confirm(t('manage.deleteConfirm', { name: booking.guestName }))) return;
+  const handleDelete = async (reservation: Reservation) => {
+    if (!window.confirm(t('manage.deleteConfirm', { name: reservation.guestName }))) {
+      return;
+    }
     clearStatus();
     try {
-      await deleteBooking(booking.id);
-      setBookings((prev) => prev.filter((b) => b.id !== booking.id));
-      if (form.editingId === booking.id) setForm(emptyForm());
+      await deleteReservation(reservation.id);
+      setReservations((prev) => prev.filter((r) => r.id !== reservation.id));
+      if (form.editingId === reservation.id) {
+        setForm(emptyForm());
+        clearSelection();
+      }
       setMessage(t('manage.deleted'));
     } catch {
       setError(t('manage.errors.saveFailed'));
@@ -297,6 +484,10 @@ export default function RoomManagement() {
               <span className="legend-item">
                 <span className="legend-swatch legend-booked" /> {t('manage.legendBooked')}
               </span>
+              <span className="legend-item">
+                <span className="legend-swatch legend-selected" />{' '}
+                {t('manage.legendSelected')}
+              </span>
             </div>
           </div>
 
@@ -309,11 +500,24 @@ export default function RoomManagement() {
                 <thead>
                   <tr>
                     <th className="unit-col">{t('manage.colRoom')}</th>
-                    {monthDays.map((iso) => (
-                      <th key={iso} className={iso === today ? 'day-col day-today' : 'day-col'}>
-                        {Number(iso.slice(8, 10))}
+                    {monthDays.map((iso) => {
+                      const isWeekend = weekendDays.includes(dayOfWeekFromIso(iso));
+                      const headClass = [
+                        'day-col',
+                        isWeekend ? 'day-weekend' : '',
+                        iso === today ? 'day-today' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ');
+                      return (
+                      <th key={iso} className={headClass}>
+                        <span className="day-head-week">
+                          {getDayLong(dayOfWeekFromIso(iso))}
+                        </span>
+                        <span className="day-head-num">{Number(iso.slice(8, 10))}</span>
                       </th>
-                    ))}
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -322,38 +526,109 @@ export default function RoomManagement() {
                       <tr className="type-row">
                         <td colSpan={monthDays.length + 1}>{roomName(room.id)}</td>
                       </tr>
-                      {(unitsByType.get(room.id) ?? []).map((unit) => (
-                        <tr key={unit.id}>
-                          <td className="unit-col">#{unit.unitNumber}</td>
-                          {monthDays.map((iso) => {
-                            const booking = (bookingsByUnit.get(unit.id) ?? []).find((b) =>
-                              coversNight(b, iso),
-                            );
-                            const classes = [
-                              'day-cell',
-                              booking ? 'day-cell-booked' : 'day-cell-free',
-                              iso === today ? 'day-today' : '',
-                              iso < today ? 'day-past' : '',
-                            ]
-                              .filter(Boolean)
-                              .join(' ');
-                            return (
-                              <td
-                                key={iso}
-                                className={classes}
-                                title={
-                                  booking
-                                    ? `${booking.guestName} (${isoToDdMmYyyy(booking.checkIn)} → ${isoToDdMmYyyy(booking.checkOut)})`
-                                    : undefined
-                                }
-                                onClick={() =>
-                                  booking ? startEdit(booking) : startNewBooking(unit.id, iso)
-                                }
-                              />
-                            );
-                          })}
-                        </tr>
-                      ))}
+                      {(unitsByType.get(room.id) ?? []).map((unit) => {
+                        const rowIndex = unitRowIndex.get(unit.id)!;
+                        return (
+                          <tr key={unit.id}>
+                            <td className="unit-col unit-col-label">{unit.label}</td>
+                            {monthDays.map((iso, colIndex) => {
+                              const unitStay = (staysByUnit.get(unit.id) ?? []).find(
+                                ({ reservation, stay }) =>
+                                  reservation.id !== form.editingId &&
+                                  coversNight(stay, iso),
+                              );
+                              const key = cellKey(unit.id, iso);
+                              const isEditingCell =
+                                Boolean(form.editingId) &&
+                                selectedCells.has(key) &&
+                                !unitStay;
+                              const isSelected =
+                                !unitStay &&
+                                !isEditingCell &&
+                                (selectedCells.has(key) || previewKeys?.has(key));
+                              const isWeekend = weekendDays.includes(dayOfWeekFromIso(iso));
+                              const classes = [
+                                'day-cell',
+                                unitStay || isEditingCell
+                                  ? 'day-cell-booked'
+                                  : 'day-cell-free',
+                                isEditingCell ? 'day-cell-editing' : '',
+                                isSelected ? 'day-cell-selected' : '',
+                                isWeekend ? 'day-weekend' : '',
+                                iso === today ? 'day-today' : '',
+                                iso < today ? 'day-past' : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' ');
+
+                              const activeReservation = unitStay?.reservation ?? editingReservation;
+                              const activeStay =
+                                unitStay?.stay ??
+                                selection?.find(
+                                  (stay) =>
+                                    stay.roomUnitId === unit.id && coversNight(stay, iso),
+                                ) ??
+                                null;
+
+                              const stayStartInMonth =
+                                activeStay &&
+                                (iso === activeStay.checkIn || iso === monthDays[0]);
+                              const visibleNights = activeStay
+                                ? Math.min(
+                                    diffDays(iso, activeStay.checkOut),
+                                    diffDays(
+                                      iso,
+                                      addDaysIso(monthDays[monthDays.length - 1], 1),
+                                    ),
+                                  )
+                                : 0;
+
+                              return (
+                                <td
+                                  key={iso}
+                                  className={classes}
+                                  style={
+                                    activeReservation && (unitStay || isEditingCell)
+                                      ? {
+                                          backgroundColor: reservationColor(
+                                            activeReservation,
+                                          ),
+                                        }
+                                      : undefined
+                                  }
+                                  title={
+                                    activeReservation && (unitStay || isEditingCell)
+                                      ? `${activeReservation.guestName} · ${roomsSummary(activeReservation)}`
+                                      : undefined
+                                  }
+                                  onMouseDown={(e) => {
+                                    if (unitStay || e.button !== 0) return;
+                                    e.preventDefault();
+                                    startDrag(rowIndex, colIndex);
+                                  }}
+                                  onMouseEnter={() => {
+                                    if (drag) extendDrag(rowIndex, colIndex);
+                                  }}
+                                  onClick={() => {
+                                    if (unitStay) startEdit(unitStay.reservation);
+                                  }}
+                                >
+                                  {activeReservation &&
+                                    (unitStay || isEditingCell) &&
+                                    stayStartInMonth && (
+                                    <span
+                                      className="cell-guest"
+                                      style={{ maxWidth: `${visibleNights * 2.1}rem` }}
+                                    >
+                                      {activeReservation.guestName}
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
                     </Fragment>
                   ))}
                 </tbody>
@@ -365,39 +640,55 @@ export default function RoomManagement() {
 
         <section className="room-manage-section room-manage-form-col">
           <h2>{form.editingId ? t('manage.editBooking') : t('manage.addBooking')}</h2>
+
+          <div className="selection-summary">
+            {selection ? (
+              <>
+                <ul className="selection-stays">
+                  {selection.map((stay) => (
+                    <li key={stay.roomUnitId}>
+                      <span className="selection-room-tag">
+                        {unitLabel(stay.roomUnitId)}
+                      </span>{' '}
+                      <span className="selection-stay-dates">
+                        {isoToDdMmYyyy(stay.checkIn)} → {isoToDdMmYyyy(stay.checkOut)} ·{' '}
+                        {t('manage.nightsCount', {
+                          count: diffDays(stay.checkIn, stay.checkOut),
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  className="btn-link"
+                  onClick={() => {
+                    clearSelection();
+                    clearStatus();
+                  }}
+                >
+                  {t('manage.clearSelection')}
+                </button>
+                {editingReservation && (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    onClick={() => {
+                      setSelectionFromReservation(editingReservation);
+                      clearStatus();
+                    }}
+                  >
+                    {t('manage.resetSelection')}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="selection-summary-empty">{t('manage.selectionEmpty')}</p>
+            )}
+          </div>
+
           <form onSubmit={handleSubmit} className="booking-form">
             <div className="booking-form-grid">
-              <label>
-                <span>{t('manage.formRoom')}</span>
-                <select
-                  value={form.roomUnitId}
-                  onChange={(e) => updateForm({ roomUnitId: e.target.value })}
-                >
-                  {roomUnits.map((unit) => (
-                    <option key={unit.id} value={unit.id}>
-                      {unitLabel(unit.id)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>{t('manage.formCheckIn')}</span>
-                <input
-                  type="date"
-                  value={form.checkIn}
-                  onChange={(e) => updateForm({ checkIn: e.target.value })}
-                  required
-                />
-              </label>
-              <label>
-                <span>{t('manage.formCheckOut')}</span>
-                <input
-                  type="date"
-                  value={form.checkOut}
-                  onChange={(e) => updateForm({ checkOut: e.target.value })}
-                  required
-                />
-              </label>
               <label>
                 <span>{t('manage.formGuestName')}</span>
                 <input
@@ -436,16 +727,59 @@ export default function RoomManagement() {
               </label>
             </div>
 
+            <div className="color-picker">
+              <span className="color-picker-label">{t('manage.formColor')}</span>
+              <div className="color-swatches">
+                {availableSwatches.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={
+                      activeColor.toLowerCase() === color.toLowerCase()
+                        ? 'color-swatch color-swatch-active'
+                        : 'color-swatch'
+                    }
+                    style={{ backgroundColor: color }}
+                    title={color}
+                    onClick={() => updateForm({ guestColor: color })}
+                  />
+                ))}
+              </div>
+              <label className="color-custom">
+                <input
+                  type="color"
+                  value={
+                    activeColor.startsWith('#') && activeColor.length >= 7
+                      ? activeColor.slice(0, 7)
+                      : '#c98a3d'
+                  }
+                  onChange={(e) => updateForm({ guestColor: e.target.value })}
+                />
+                <span>{t('manage.formColorCustom')}</span>
+              </label>
+            </div>
+
             {error && <p className="room-manage-error">{error}</p>}
             {message && <p className="room-manage-success">{message}</p>}
 
             <div className="booking-form-actions">
-              <button type="submit" className="btn btn-primary">
-                {form.editingId ? t('manage.update') : t('manage.save')}
-              </button>
-              {form.editingId && (
-                <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
-                  {t('manage.cancelEdit')}
+              <div className="booking-form-actions-row">
+                <button type="submit" className="btn btn-primary">
+                  {form.editingId ? t('manage.update') : t('manage.save')}
+                </button>
+                {form.editingId && (
+                  <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                    {t('manage.cancelEdit')}
+                  </button>
+                )}
+              </div>
+              {editingReservation && (
+                <button
+                  type="button"
+                  className="btn btn-delete"
+                  onClick={() => handleDelete(editingReservation)}
+                >
+                  {t('manage.delete')}
                 </button>
               )}
             </div>
@@ -455,45 +789,54 @@ export default function RoomManagement() {
 
         <section className="room-manage-section">
           <h2>{t('manage.monthBookings')}</h2>
-          {monthBookings.length === 0 ? (
+          {monthReservations.length === 0 ? (
             <p className="room-manage-info">{t('manage.noBookings')}</p>
           ) : (
             <div className="bookings-table-wrap">
               <table className="bookings-table">
                 <thead>
                   <tr>
-                    <th>{t('manage.colRoom')}</th>
                     <th>{t('manage.colGuest')}</th>
                     <th>{t('manage.colPhone')}</th>
-                    <th>{t('manage.colDates')}</th>
+                    <th>{t('manage.colRooms')}</th>
                     <th>{t('manage.colGuests')}</th>
                     <th>{t('manage.colNotes')}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthBookings.map((booking) => (
-                    <tr key={booking.id}>
-                      <td>{unitLabel(booking.roomUnitId)}</td>
-                      <td>{booking.guestName}</td>
-                      <td>{booking.guestPhone || '—'}</td>
+                  {monthReservations.map((reservation) => (
+                    <tr key={reservation.id}>
                       <td>
-                        {isoToDdMmYyyy(booking.checkIn)} → {isoToDdMmYyyy(booking.checkOut)}
+                        <span
+                          className="guest-color-dot"
+                          style={{ backgroundColor: reservationColor(reservation) }}
+                        />
+                        {reservation.guestName}
                       </td>
-                      <td>{booking.guests}</td>
-                      <td className="booking-notes">{booking.notes || '—'}</td>
+                      <td>{reservation.guestPhone || '—'}</td>
+                      <td className="booking-rooms">
+                        {reservation.rooms.map((stay) => (
+                          <div key={stay.roomUnitId}>
+                            {unitLabel(stay.roomUnitId)}:{' '}
+                            {isoToDdMmYyyy(stay.checkIn)} → {isoToDdMmYyyy(stay.checkOut)}
+                          </div>
+                        ))}
+                      </td>
+                      <td>{reservation.guests}</td>
+                      <td className="booking-notes">{reservation.notes || '—'}</td>
                       <td className="booking-actions">
                         <button
                           type="button"
                           className="btn-link"
-                          onClick={() => startEdit(booking)}
+                          onClick={() => startEdit(reservation)}
                         >
                           {t('manage.edit')}
                         </button>
                         <button
                           type="button"
                           className="btn-link btn-link-danger"
-                          onClick={() => handleDelete(booking)}
+                          onClick={() => handleDelete(reservation)}
                         >
                           {t('manage.delete')}
                         </button>
