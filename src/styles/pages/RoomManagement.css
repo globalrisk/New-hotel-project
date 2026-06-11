@@ -26,16 +26,15 @@
   gap: 2rem;
 }
 
-/* Use almost the full screen width on this page (the site default is 1200px). */
-.room-manage .container {
-  max-width: min(1800px, 96vw);
-}
+/* Calendar page uses the same layout width as the header (see --layout-max-width). */
 
 .room-manage-section {
   background: rgba(255, 255, 255, 0.95);
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* Occupancy grid + booking form side by side */
@@ -96,6 +95,13 @@
   gap: 0.5rem;
 }
 
+.calendar-nav {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .month-label {
   font-weight: 600;
   color: var(--primary-color);
@@ -128,6 +134,42 @@
   font-weight: 700;
 }
 
+.btn-today {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 999px;
+  background: rgba(139, 115, 85, 0.1);
+  color: var(--primary-color);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.btn-today:hover {
+  background: var(--primary-color);
+  color: white;
+}
+
+.occupancy-today-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  text-align: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(139, 115, 85, 0.45);
+  text-underline-offset: 3px;
+}
+
+.occupancy-today-btn:hover {
+  color: var(--primary-color);
+}
+
 .occupancy-today {
   font-weight: 500;
   color: #555;
@@ -151,6 +193,13 @@
   height: 1rem;
   border-radius: 3px;
   display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-cell {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .legend-free {
@@ -158,19 +207,40 @@
   border: 1px solid #cfdccf;
 }
 
-.legend-booked {
-  background: #c98a3d;
+/* Mini calendar cell with booking pills — matches the grid bar style */
+.legend-booked-cell {
+  width: 2.6rem;
+  height: 1.1rem;
+  padding: 0 3px;
+  gap: 2px;
+  background: #f6f4ef;
+  border: 1px solid #e3ddd2;
+  border-radius: 3px;
+}
+
+.legend-stay-pill {
+  flex: 1;
+  height: 0.55rem;
+  min-width: 0.4rem;
+  border-radius: 999px;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.1);
 }
 
 /* Occupancy grid */
 
 .occupancy-grid-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  /* Scroll rooms inside the grid so the day header can stay pinned on top */
+  max-height: min(72vh, 760px);
 }
 
 .occupancy-grid {
   border-collapse: collapse;
   width: 100%;
+  /* Prevent text selection / iOS callout while drag-selecting cells */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .occupancy-grid th,
@@ -181,16 +251,22 @@
 }
 
 .occupancy-grid th.day-col {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   min-width: 2.6rem;
   padding: 0.35rem 0.15rem;
-  background: rgba(139, 115, 85, 0.1);
+  /* Solid underlay: rows scrolling beneath must not show through */
+  background: linear-gradient(rgba(139, 115, 85, 0.1), rgba(139, 115, 85, 0.1)), white;
   color: var(--primary-color);
   font-weight: 600;
   vertical-align: bottom;
+  /* border-collapse borders don't stick — redraw them via shadow */
+  box-shadow: inset 0 -1px 0 #e3ddd2, inset 1px 0 0 #e3ddd2;
 }
 
 .occupancy-grid th.day-col.day-weekend {
-  background: rgba(212, 175, 55, 0.28);
+  background: linear-gradient(rgba(212, 175, 55, 0.28), rgba(212, 175, 55, 0.28)), white;
 }
 
 .day-head-week {
@@ -221,7 +297,8 @@
   text-align: left;
   white-space: nowrap;
   font-weight: 500;
-  z-index: 1;
+  z-index: 2;
+  box-shadow: inset -1px 0 0 #e3ddd2;
 }
 
 .occupancy-grid .unit-col-label {
@@ -230,18 +307,23 @@
 }
 
 .occupancy-grid thead .unit-col {
-  background: rgba(139, 115, 85, 0.12);
+  /* Corner cell: pinned both ways, above row labels and day headers */
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(rgba(139, 115, 85, 0.12), rgba(139, 115, 85, 0.12)), white;
   color: var(--primary-color);
+  box-shadow: inset 0 -1px 0 #e3ddd2, inset -1px 0 0 #e3ddd2;
 }
 
 .type-row td {
-  background: rgba(212, 175, 55, 0.18);
+  background: linear-gradient(rgba(212, 175, 55, 0.18), rgba(212, 175, 55, 0.18)), white;
   color: var(--primary-color);
   font-weight: 600;
   text-align: left;
   padding: 0.35rem 0.6rem;
   position: sticky;
   left: 0;
+  z-index: 2;
 }
 
 .day-cell {
@@ -250,10 +332,35 @@
   position: relative;
 }
 
-/* Guest name shown on the first night of a stay, flowing over same-color cells */
+/* Booking bar: one rounded pill spanning the nights of a stay */
+.cell-stay {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  /* Bleed 1px over cell borders so segments join into one bar */
+  left: -1px;
+  right: -1px;
+  z-index: 0;
+  pointer-events: none;
+  box-shadow: inset 0 -1.5px 0 rgba(0, 0, 0, 0.12);
+}
+
+.cell-stay.stay-start {
+  left: 3px;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.cell-stay.stay-end {
+  right: 3px;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+/* Guest name shown on the first night of a stay, flowing over the bar */
 .cell-guest {
   position: absolute;
-  left: 3px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: white;
@@ -265,7 +372,7 @@
   text-align: left;
   pointer-events: none;
   z-index: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 /* Nights currently picked in the form (before saving) */
@@ -291,22 +398,82 @@
   background: #ebe0cf;
 }
 
+/* Booked cells stay neutral; the colored .cell-stay bar carries the booking */
 .day-cell-booked {
-  background: #c98a3d;
+  background: #f6f4ef;
 }
 
-.day-cell-booked:hover {
-  background: #b5772e;
+.day-cell-booked.day-weekend {
+  background: #f8f0e4;
 }
 
-/* Booking being edited — keep guest color, add a light edit ring */
-.day-cell-booked.day-cell-editing {
+.day-cell-booked.stay-hovered .cell-stay {
+  filter: brightness(0.92);
+}
+
+/* Booking being edited — keep guest color, add a light edit ring on the bar */
+.day-cell-booked.day-cell-editing .cell-stay {
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+/* Today column — subtle tint down the grid body */
+.day-cell-free.day-today {
+  background: #e4ebe0;
+}
+
+.day-cell-free.day-weekend.day-today {
+  background: #f0e8d8;
+}
+
+.day-cell-booked.day-today {
+  background: #eeeae3;
+}
+
+.day-cell-booked.day-weekend.day-today {
+  background: #f0e8dc;
+}
+
+.day-cell.day-today {
+  border-left-color: rgba(139, 115, 85, 0.32);
+  border-right-color: rgba(139, 115, 85, 0.32);
+}
+
+.day-cell-free.day-today:hover {
+  background: #d8e4d4;
+}
+
+.day-cell-free.day-weekend.day-today:hover {
+  background: #e8dfd0;
+}
+
+.day-cell-free.day-today.day-cell-selected {
+  background: rgba(212, 175, 55, 0.55);
 }
 
 .occupancy-grid th.day-today {
   background: var(--primary-color);
   color: white;
+}
+
+.occupancy-grid th.day-today.day-today-flash {
+  box-shadow: inset 0 0 0 2px white;
+}
+
+@keyframes today-col-pulse {
+  0% {
+    filter: brightness(1);
+  }
+  40% {
+    filter: brightness(1.2);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+.day-cell.day-today.day-today-flash,
+.occupancy-grid th.day-today.day-today-flash {
+  animation: today-col-pulse 0.7s ease;
 }
 
 .day-cell-free.day-past {
@@ -325,8 +492,8 @@
   background: #ddd2c0;
 }
 
-/* Booked cells use per-customer inline colors, so past ones just fade */
-.day-cell-booked.day-past {
+/* Fade the whole bar only when every night of the stay is in the past */
+.day-cell-booked.stay-past {
   opacity: 0.5;
 }
 
@@ -501,6 +668,12 @@
   grid-column: 1 / -1;
 }
 
+.booking-form-notes textarea {
+  min-height: 9rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
 .booking-form-actions {
   display: flex;
   flex-direction: column;
@@ -554,14 +727,33 @@
 }
 
 .booking-notes {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 360px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .booking-actions {
   white-space: nowrap;
+}
+
+.undo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  background: rgba(212, 175, 55, 0.18);
+  border: 1px solid rgba(139, 115, 85, 0.25);
+  color: #5c4a32;
+  font-size: 0.92rem;
+}
+
+.btn-sm {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
 }
 
 .btn-link {
@@ -599,46 +791,260 @@
 
 @media (max-width: 768px) {
   .room-manage-content {
-    padding: 1.5rem 0;
-    gap: 1.25rem;
+    padding: 1rem 0 0;
+    gap: 1rem;
   }
 
   .room-manage-section {
-    padding: 1.25rem;
+    padding: 1rem;
+    border-radius: 8px;
   }
 
   .room-manage-header {
-    padding: 2rem 1rem;
+    padding: 1.5rem 1rem;
+  }
+
+  .room-manage-header h1 {
+    font-size: 1.6rem;
   }
 
   .room-manage-toolbar {
-    gap: 0.75rem 1.25rem;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
   }
 
-  /* Compact calendar cells so more days fit before scrolling */
+  .month-nav {
+    justify-content: center;
+  }
+
+  .calendar-nav {
+    width: 100%;
+  }
+
+  .occupancy-today-btn {
+    text-align: center;
+    width: 100%;
+  }
+
+  .occupancy-legend {
+    justify-content: center;
+    gap: 0.65rem 1rem;
+  }
+
+  .occupancy-grid-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
   .occupancy-grid th,
   .occupancy-grid td {
-    font-size: 0.72rem;
-  }
-
-  .occupancy-grid th.day-col {
-    min-width: 1.6rem;
-    padding: 0.25rem 0.05rem;
-  }
-
-  .day-cell {
-    height: 1.7rem;
-  }
-
-  .occupancy-grid .unit-col {
-    padding: 0.25rem 0.4rem;
     font-size: 0.75rem;
   }
 
-  .bookings-table th,
+  .occupancy-grid th.day-col {
+    min-width: 2.1rem;
+    padding: 0.3rem 0.1rem;
+  }
+
+  .day-head-week {
+    font-size: 0.62rem;
+    max-width: 2.2rem;
+  }
+
+  .day-cell {
+    height: 2.45rem;
+    min-width: 2.1rem;
+    touch-action: manipulation;
+  }
+
+  .btn-month {
+    touch-action: manipulation;
+  }
+
+  .occupancy-grid .unit-col {
+    padding: 0.35rem 0.45rem;
+    font-size: 0.72rem;
+    min-width: 4.5rem;
+  }
+
+  .cell-guest {
+    font-size: 0.62rem;
+  }
+
+  .room-manage-hint {
+    font-size: 0.82rem;
+    text-align: center;
+  }
+
+  .room-manage-grid-col.has-mobile-bar {
+    padding-bottom: 5rem;
+  }
+
+  .mobile-selection-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+    background: rgba(255, 255, 255, 0.98);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  }
+
+  .mobile-selection-bar-text {
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  .mobile-selection-bar .btn {
+    flex: 1;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .mobile-selection-clear {
+    flex: 0 0 auto;
+    min-width: 5rem;
+  }
+
+  /* Booking form: slide-up panel (only when expanded) */
+  .room-manage-form-col {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 210;
+    max-height: min(88vh, 780px);
+    overflow-y: auto;
+    margin: 0;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+    transform: translateY(110%);
+    transition: transform 0.28s ease;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .room-manage-form-col.is-open {
+    transform: translateY(0);
+  }
+
+  .mobile-form-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    border: none;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .mobile-panel-close {
+    position: absolute;
+    top: 0.65rem;
+    right: 0.65rem;
+    z-index: 1;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: white;
+    color: #555;
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .room-manage-form-col h2 {
+    padding-right: 2.5rem;
+    font-size: 1.1rem;
+  }
+
+  .booking-form-actions-row {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .booking-form-actions-row .btn {
+    width: 100%;
+  }
+
+  .btn-delete {
+    width: 100%;
+  }
+
+  .color-swatches {
+    flex-wrap: wrap;
+  }
+
+  .color-swatch {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  /* Bookings list as cards */
+  .bookings-table thead {
+    display: none;
+  }
+
+  .bookings-table tbody tr {
+    display: block;
+    margin-bottom: 1rem;
+    padding: 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: #fafafa;
+  }
+
   .bookings-table td {
-    padding: 0.5rem 0.6rem;
-    font-size: 0.85rem;
+    display: block;
+    padding: 0.35rem 0;
+    border: none;
+    font-size: 0.88rem;
+  }
+
+  .bookings-table td::before {
+    content: attr(data-label);
+    display: block;
+    font-weight: 600;
+    color: var(--primary-color);
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .bookings-table td[data-label='']::before {
+    display: none;
+  }
+
+  .booking-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    padding-top: 0.5rem;
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .booking-notes {
+    max-width: none;
+  }
+
+  .undo-banner {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .undo-banner .btn {
+    width: 100%;
   }
 }
 

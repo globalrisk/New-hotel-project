@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
 import { roomUnits, type RoomUnit } from '../data/roomUnits';
@@ -7,6 +7,9 @@ import {
   createReservation,
   deleteReservation,
   fetchReservations,
+  fetchRevisionForReservation,
+  fetchUndoableReservationIds,
+  undoReservationChange,
   updateReservation,
   type Reservation,
   type ReservationInput,
@@ -14,10 +17,12 @@ import {
 } from '../lib/reservationsApi';
 import {
   GUEST_COLOR_PALETTE,
+  readableTextColor,
   resolveReservationColor,
   suggestGuestColor,
 } from '../utils/guestColor';
 import { dayOfWeekFromIso, formatDdMmYyyy, toIsoDateString, todayIso } from '../utils/date';
+import { useMediaQuery } from '../utils/useMediaQuery';
 import '../styles/pages/RoomManagement.css';
 
 interface ReservationForm {
@@ -114,8 +119,9 @@ function selectionMatchesReservation(
 }
 
 export default function RoomManagement() {
-  const { t, roomName, getDayLong } = useLanguage();
+  const { t, roomName, getDayLong, getDayShort } = useLanguage();
   const { weekendDays } = useRooms();
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,6 +136,71 @@ export default function RoomManagement() {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [undoableIds, setUndoableIds] = useState<Set<string>>(() => new Set());
+  const [deletedUndo, setDeletedUndo] = useState<{ id: string; guestName: string } | null>(
+    null,
+  );
+  const [mobileFormExpanded, setMobileFormExpanded] = useState(false);
+  const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
+  const gridWrapRef = useRef<HTMLDivElement>(null);
+  const pendingScrollTodayRef = useRef(false);
+  const hoverClearRef = useRef<number | null>(null);
+
+  const stayHoverKey = (reservationId: string, unitId: string, checkIn: string) =>
+    `${reservationId}|${unitId}|${checkIn}`;
+
+  const highlightStay = (key: string) => {
+    if (hoverClearRef.current) {
+      window.clearTimeout(hoverClearRef.current);
+      hoverClearRef.current = null;
+    }
+    setHoveredStayKey(key);
+  };
+
+  const clearStayHighlight = () => {
+    hoverClearRef.current = window.setTimeout(() => {
+      setHoveredStayKey(null);
+      hoverClearRef.current = null;
+    }, 0);
+  };
+
+  const scrollToTodayColumn = useCallback(() => {
+    const wrap = gridWrapRef.current;
+    if (!wrap) return;
+    const todayCol = wrap.querySelector('[data-today-col="true"]') as HTMLElement | null;
+    if (!todayCol) return;
+
+    const stickyRoomCol = wrap.querySelector('thead .unit-col') as HTMLElement | null;
+    const stickyWidth = stickyRoomCol?.getBoundingClientRect().width ?? 0;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const colRect = todayCol.getBoundingClientRect();
+    const colCenter = colRect.left + colRect.width / 2;
+    // Center today in the day columns area (to the right of sticky room names).
+    const daysAreaCenter =
+      wrapRect.left + stickyWidth + (wrapRect.width - stickyWidth) / 2;
+
+    wrap.scrollBy({ left: colCenter - daysAreaCenter, behavior: 'smooth' });
+    wrap.querySelectorAll('[data-today-col="true"]').forEach((el) => {
+      el.classList.add('day-today-flash');
+      window.setTimeout(() => el.classList.remove('day-today-flash'), 700);
+    });
+  }, []);
+
+  const refreshUndoable = async () => {
+    const ids = await fetchUndoableReservationIds();
+    setUndoableIds(new Set(ids));
+
+    const deleteOnly = await Promise.all(
+      ids.map(async (id) => {
+        const revision = await fetchRevisionForReservation(id);
+        if (revision?.action !== 'delete') return null;
+        return { id, guestName: revision.snapshot.guestName };
+      }),
+    );
+    const deleted = deleteOnly.find(Boolean) ?? null;
+    setDeletedUndo(deleted);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +214,7 @@ export default function RoomManagement() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    refreshUndoable();
     return () => {
       cancelled = true;
     };
@@ -382,7 +454,24 @@ export default function RoomManagement() {
     setForm(emptyForm());
     clearSelection();
     clearStatus();
+    setMobileFormExpanded(false);
   };
+
+  const collapseMobilePanel = () => {
+    setMobileFormExpanded(false);
+    clearStatus();
+  };
+
+  const closeMobilePanel = () => {
+    collapseMobilePanel();
+  };
+
+  const isFormPanelOpen =
+    isMobile && mobileFormExpanded && Boolean(selection || form.editingId);
+  const showMobileSelectionBar =
+    isMobile &&
+    !mobileFormExpanded &&
+    (Boolean(selection) || Boolean(form.editingId));
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -441,8 +530,39 @@ export default function RoomManagement() {
       setForm(emptyForm());
       clearSelection();
       setMessage(t('manage.saved'));
+      setMobileFormExpanded(false);
+      await refreshUndoable();
     } catch {
       setError(t('manage.errors.saveFailed'));
+    }
+  };
+
+  const handleUndo = async (reservationId: string) => {
+    if (!window.confirm(t('manage.undoConfirm'))) return;
+    clearStatus();
+    try {
+      const restored = await undoReservationChange(reservationId);
+      if (!restored) {
+        setError(t('manage.errors.undoFailed'));
+        return;
+      }
+      setReservations((prev) => {
+        const exists = prev.some((r) => r.id === restored.id);
+        if (exists) {
+          return prev.map((r) => (r.id === restored.id ? restored : r));
+        }
+        return [...prev, restored];
+      });
+      if (form.editingId === reservationId) {
+        startEdit(restored);
+      }
+      if (deletedUndo?.id === reservationId) {
+        setDeletedUndo(null);
+      }
+      await refreshUndoable();
+      setMessage(t('manage.undoDone', { name: restored.guestName }));
+    } catch {
+      setError(t('manage.errors.undoFailed'));
     }
   };
 
@@ -459,6 +579,7 @@ export default function RoomManagement() {
         clearSelection();
       }
       setMessage(t('manage.deleted'));
+      await refreshUndoable();
     } catch {
       setError(t('manage.errors.saveFailed'));
     }
@@ -468,6 +589,28 @@ export default function RoomManagement() {
     setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
   };
 
+  const goToToday = () => {
+    const now = new Date();
+    const onTodayMonth =
+      monthDate.getFullYear() === now.getFullYear() &&
+      monthDate.getMonth() === now.getMonth();
+
+    if (!onTodayMonth) {
+      pendingScrollTodayRef.current = true;
+      setMonthDate(new Date(now.getFullYear(), now.getMonth(), 1));
+      return;
+    }
+    scrollToTodayColumn();
+  };
+
+  useEffect(() => {
+    if (!pendingScrollTodayRef.current || loading) return;
+    pendingScrollTodayRef.current = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollToTodayColumn());
+    });
+  }, [year, month, loading, scrollToTodayColumn]);
+
   return (
     <div className="room-manage">
       <div className="room-manage-header">
@@ -476,45 +619,70 @@ export default function RoomManagement() {
       </div>
 
       <div className="container room-manage-content">
+        {isMobile && isFormPanelOpen && (
+          <button
+            type="button"
+            className="mobile-form-backdrop"
+            aria-label={t('manage.closePanel')}
+            onClick={closeMobilePanel}
+          />
+        )}
         <div className="room-manage-main">
-        <section className="room-manage-section room-manage-grid-col">
+        <section
+          className={`room-manage-section room-manage-grid-col${showMobileSelectionBar ? ' has-mobile-bar' : ''}`}
+        >
           <div className="room-manage-toolbar">
-            <div className="month-nav">
-              <button
-                type="button"
-                className="btn-month"
-                onClick={() => changeMonth(-1)}
-                aria-label={t('manage.prevMonth')}
-              >
-                ‹
-              </button>
-              <span className="month-label">
-                {t('manage.monthLabel', { month: month + 1, year })}
-              </span>
-              <button
-                type="button"
-                className="btn-month btn-month-next"
-                onClick={() => changeMonth(1)}
-                aria-label={t('manage.nextMonth')}
-              >
-                ›
+            <div className="calendar-nav">
+              <div className="month-nav">
+                <button
+                  type="button"
+                  className="btn-month"
+                  onClick={() => changeMonth(-1)}
+                  aria-label={t('manage.prevMonth')}
+                >
+                  ‹
+                </button>
+                <span className="month-label">
+                  {t('manage.monthLabel', { month: month + 1, year })}
+                </span>
+                <button
+                  type="button"
+                  className="btn-month btn-month-next"
+                  onClick={() => changeMonth(1)}
+                  aria-label={t('manage.nextMonth')}
+                >
+                  ›
+                </button>
+              </div>
+              <button type="button" className="btn-today" onClick={goToToday}>
+                {t('manage.goToToday')}
               </button>
             </div>
-            <div className="occupancy-today">
+            <button type="button" className="occupancy-today-btn" onClick={goToToday}>
               {t('manage.todaySummary', {
                 booked: bookedTodayCount,
                 total: roomUnits.length,
               })}
-            </div>
+            </button>
             <div className="occupancy-legend">
               <span className="legend-item">
-                <span className="legend-swatch legend-free" /> {t('manage.legendFree')}
+                <span className="legend-swatch legend-free" aria-hidden="true" />{' '}
+                {t('manage.legendFree')}
               </span>
               <span className="legend-item">
-                <span className="legend-swatch legend-booked" /> {t('manage.legendBooked')}
+                <span className="legend-cell legend-booked-cell" aria-hidden="true">
+                  {GUEST_COLOR_PALETTE.slice(0, 3).map((color) => (
+                    <span
+                      key={color}
+                      className="legend-stay-pill"
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </span>{' '}
+                {t('manage.legendBooked')}
               </span>
               <span className="legend-item">
-                <span className="legend-swatch legend-selected" />{' '}
+                <span className="legend-swatch legend-selected" aria-hidden="true" />{' '}
                 {t('manage.legendSelected')}
               </span>
             </div>
@@ -524,7 +692,7 @@ export default function RoomManagement() {
           {loadError && <p className="room-manage-error">{loadError}</p>}
 
           {!loading && (
-            <div className="occupancy-grid-wrap">
+            <div className="occupancy-grid-wrap" ref={gridWrapRef}>
               <table className="occupancy-grid">
                 <thead>
                   <tr>
@@ -539,9 +707,13 @@ export default function RoomManagement() {
                         .filter(Boolean)
                         .join(' ');
                       return (
-                      <th key={iso} className={headClass}>
+                      <th
+                        key={iso}
+                        className={headClass}
+                        data-today-col={iso === today ? 'true' : undefined}
+                      >
                         <span className="day-head-week">
-                          {getDayLong(dayOfWeekFromIso(iso))}
+                          {(isMobile ? getDayShort : getDayLong)(dayOfWeekFromIso(iso))}
                         </span>
                         <span className="day-head-num">{Number(iso.slice(8, 10))}</span>
                       </th>
@@ -576,20 +748,6 @@ export default function RoomManagement() {
                                 !isEditingCell &&
                                 (selectedCells.has(key) || previewKeys?.has(key));
                               const isWeekend = weekendDays.includes(dayOfWeekFromIso(iso));
-                              const classes = [
-                                'day-cell',
-                                unitStay || isEditingCell
-                                  ? 'day-cell-booked'
-                                  : 'day-cell-free',
-                                isEditingCell ? 'day-cell-editing' : '',
-                                isSelected ? 'day-cell-selected' : '',
-                                isWeekend ? 'day-weekend' : '',
-                                iso === today ? 'day-today' : '',
-                                iso < today ? 'day-past' : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' ');
-
                               const activeReservation = unitStay?.reservation ?? editingReservation;
                               const activeStay =
                                 unitStay?.stay ??
@@ -598,6 +756,40 @@ export default function RoomManagement() {
                                     stay.roomUnitId === unit.id && coversNight(stay, iso),
                                 ) ??
                                 null;
+                              const isBookedCell =
+                                Boolean(activeReservation) &&
+                                Boolean(unitStay || isEditingCell);
+                              const stayFullyPast = Boolean(
+                                activeStay && activeStay.checkOut <= today,
+                              );
+                              const cellStayHoverKey =
+                                activeReservation && activeStay
+                                  ? stayHoverKey(
+                                      activeReservation.id,
+                                      unit.id,
+                                      activeStay.checkIn,
+                                    )
+                                  : null;
+                              const classes = [
+                                'day-cell',
+                                isBookedCell ? 'day-cell-booked' : 'day-cell-free',
+                                isEditingCell ? 'day-cell-editing' : '',
+                                isSelected ? 'day-cell-selected' : '',
+                                isWeekend ? 'day-weekend' : '',
+                                iso === today ? 'day-today' : '',
+                                isBookedCell
+                                  ? stayFullyPast
+                                    ? 'stay-past'
+                                    : ''
+                                  : iso < today
+                                    ? 'day-past'
+                                    : '',
+                                cellStayHoverKey && hoveredStayKey === cellStayHoverKey
+                                  ? 'stay-hovered'
+                                  : '',
+                              ]
+                                .filter(Boolean)
+                                .join(' ');
 
                               const stayStartInMonth =
                                 activeStay &&
@@ -612,19 +804,18 @@ export default function RoomManagement() {
                                   )
                                 : 0;
 
+                              // Round the bar only at the real stay edges so a stay
+                              // crossing the month boundary reads as "continues".
+                              const stayStartsHere =
+                                !activeStay || iso === activeStay.checkIn;
+                              const stayEndsHere =
+                                !activeStay || diffDays(iso, activeStay.checkOut) === 1;
+
                               return (
                                 <td
                                   key={iso}
                                   className={classes}
-                                  style={
-                                    activeReservation && (unitStay || isEditingCell)
-                                      ? {
-                                          backgroundColor: reservationColor(
-                                            activeReservation,
-                                          ),
-                                        }
-                                      : undefined
-                                  }
+                                  data-today-col={iso === today ? 'true' : undefined}
                                   title={
                                     activeReservation && (unitStay || isEditingCell)
                                       ? `${activeReservation.guestName} · ${roomsSummary(activeReservation)}`
@@ -637,21 +828,53 @@ export default function RoomManagement() {
                                   }}
                                   onMouseEnter={() => {
                                     if (drag) extendDrag(rowIndex, colIndex);
+                                    if (cellStayHoverKey) highlightStay(cellStayHoverKey);
+                                  }}
+                                  onMouseLeave={() => {
+                                    if (cellStayHoverKey) clearStayHighlight();
                                   }}
                                   onClick={() => {
                                     if (unitStay) startEdit(unitStay.reservation);
                                   }}
                                 >
-                                  {activeReservation &&
-                                    (unitStay || isEditingCell) &&
-                                    stayStartInMonth && (
+                                  {isBookedCell && activeReservation && (
                                     <span
-                                      className="cell-guest"
-                                      style={{ maxWidth: `${visibleNights * 2.1}rem` }}
-                                    >
-                                      {activeReservation.guestName}
-                                    </span>
+                                      className={[
+                                        'cell-stay',
+                                        stayStartsHere ? 'stay-start' : '',
+                                        stayEndsHere ? 'stay-end' : '',
+                                      ]
+                                        .filter(Boolean)
+                                        .join(' ')}
+                                      style={{
+                                        backgroundColor: reservationColor(activeReservation),
+                                      }}
+                                    />
                                   )}
+                                  {/* Too-narrow bars (single night) get no label; the
+                                      name stays available via tooltip and tap-to-edit */}
+                                  {isBookedCell &&
+                                    activeReservation &&
+                                    stayStartInMonth &&
+                                    visibleNights >= 2 &&
+                                    (() => {
+                                      const labelColor = readableTextColor(
+                                        reservationColor(activeReservation),
+                                      );
+                                      return (
+                                        <span
+                                          className="cell-guest"
+                                          style={{
+                                            maxWidth: `calc(${visibleNights * 2.1}rem - 0.8rem)`,
+                                            color: labelColor,
+                                            textShadow:
+                                              labelColor === 'white' ? undefined : 'none',
+                                          }}
+                                        >
+                                          {activeReservation.guestName}
+                                        </span>
+                                      );
+                                    })()}
                                 </td>
                               );
                             })}
@@ -664,10 +887,62 @@ export default function RoomManagement() {
               </table>
             </div>
           )}
-          <p className="room-manage-hint">{t('manage.gridHint')}</p>
+          <p className="room-manage-hint">
+            {isMobile ? t('manage.mobileHint') : t('manage.gridHint')}
+          </p>
         </section>
 
-        <section className="room-manage-section room-manage-form-col">
+        {showMobileSelectionBar && (
+          <div className="mobile-selection-bar">
+            <p className="mobile-selection-bar-text">
+              {form.editingId
+                ? t('manage.mobileEditingSummary', { name: form.guestName || '—' })
+                : t('manage.mobileSelectionSummary', { count: selection?.length ?? 0 })}
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setMobileFormExpanded(true)}
+            >
+              {t('manage.openForm')}
+            </button>
+            {form.editingId ? (
+              <button
+                type="button"
+                className="btn btn-secondary mobile-selection-clear"
+                onClick={cancelEdit}
+              >
+                {t('manage.cancelEdit')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary mobile-selection-clear"
+                onClick={() => {
+                  clearSelection();
+                  clearStatus();
+                  setMobileFormExpanded(false);
+                }}
+              >
+                {t('manage.clearSelection')}
+              </button>
+            )}
+          </div>
+        )}
+
+        <section
+          className={`room-manage-section room-manage-form-col${isFormPanelOpen ? ' is-open' : ''}`}
+        >
+          {isMobile && isFormPanelOpen && (
+            <button
+              type="button"
+              className="mobile-panel-close"
+              onClick={closeMobilePanel}
+              aria-label={t('manage.closePanel')}
+            >
+              ×
+            </button>
+          )}
           <h2>{form.editingId ? t('manage.editBooking') : t('manage.addBooking')}</h2>
 
           <div className="selection-summary">
@@ -770,7 +1045,7 @@ export default function RoomManagement() {
               <label className="booking-form-notes">
                 <span>{t('manage.formNotes')}</span>
                 <textarea
-                  rows={2}
+                  rows={6}
                   value={form.notes}
                   onChange={(e) => updateForm({ notes: e.target.value })}
                 />
@@ -822,6 +1097,15 @@ export default function RoomManagement() {
                     {t('manage.cancelEdit')}
                   </button>
                 )}
+                {editingReservation && undoableIds.has(editingReservation.id) && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => handleUndo(editingReservation.id)}
+                  >
+                    {t('manage.undo')}
+                  </button>
+                )}
               </div>
               {editingReservation && (
                 <button
@@ -838,6 +1122,18 @@ export default function RoomManagement() {
         </div>
 
         <section className="room-manage-section">
+          {deletedUndo && (
+            <div className="undo-banner">
+              <span>{t('manage.deletedUndoBanner', { name: deletedUndo.guestName })}</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => handleUndo(deletedUndo.id)}
+              >
+                {t('manage.undo')}
+              </button>
+            </div>
+          )}
           <h2>{t('manage.monthBookings')}</h2>
           {monthReservations.length === 0 ? (
             <p className="room-manage-info">{t('manage.noBookings')}</p>
@@ -857,15 +1153,15 @@ export default function RoomManagement() {
                 <tbody>
                   {monthReservations.map((reservation) => (
                     <tr key={reservation.id}>
-                      <td>
+                      <td data-label={t('manage.colGuest')}>
                         <span
                           className="guest-color-dot"
                           style={{ backgroundColor: reservationColor(reservation) }}
                         />
                         {reservation.guestName}
                       </td>
-                      <td>{reservation.guestPhone || '—'}</td>
-                      <td className="booking-rooms">
+                      <td data-label={t('manage.colPhone')}>{reservation.guestPhone || '—'}</td>
+                      <td className="booking-rooms" data-label={t('manage.colRooms')}>
                         {reservation.rooms.map((stay) => (
                           <div key={stay.roomUnitId}>
                             {unitLabel(stay.roomUnitId)}:{' '}
@@ -873,9 +1169,11 @@ export default function RoomManagement() {
                           </div>
                         ))}
                       </td>
-                      <td>{reservation.guests}</td>
-                      <td className="booking-notes">{reservation.notes || '—'}</td>
-                      <td className="booking-actions">
+                      <td data-label={t('manage.colGuests')}>{reservation.guests}</td>
+                      <td className="booking-notes" data-label={t('manage.colNotes')}>
+                        {reservation.notes || '—'}
+                      </td>
+                      <td className="booking-actions" data-label="">
                         <button
                           type="button"
                           className="btn-link"
@@ -883,6 +1181,15 @@ export default function RoomManagement() {
                         >
                           {t('manage.edit')}
                         </button>
+                        {undoableIds.has(reservation.id) && (
+                          <button
+                            type="button"
+                            className="btn-link"
+                            onClick={() => handleUndo(reservation.id)}
+                          >
+                            {t('manage.undo')}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn-link btn-link-danger"

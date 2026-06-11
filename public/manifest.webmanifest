@@ -1,0 +1,17 @@
+{
+  "name": "Coto Queen",
+  "short_name": "Coto Queen",
+  "description": "Coto Queen room and booking management",
+  "start_url": "/admin/rooms",
+  "display": "standalone",
+  "background_color": "#1a1a1a",
+  "theme_color": "#8b7355",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

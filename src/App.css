@@ -7,6 +7,8 @@
   --text-color: #333;
   --border-color: #ddd;
   --transition: all 0.3s ease;
+  --layout-max-width: 1800px;
+  --layout-padding: clamp(0.75rem, 2.5vw, 1.25rem);
 }
 
 * {
@@ -24,6 +26,8 @@ body {
 
 body {
   background: url('/sean-oulashin-KMn4VEeEPR8-unsplash.jpg') center / cover no-repeat fixed;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .app {
@@ -37,9 +41,10 @@ body {
 }
 
 .container {
-  max-width: 1200px;
+  width: 100%;
+  max-width: var(--layout-max-width);
   margin: 0 auto;
-  padding: 0 20px;
+  padding-inline: var(--layout-padding);
 }
 
 /* Typography */

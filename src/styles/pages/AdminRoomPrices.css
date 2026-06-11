@@ -184,9 +184,34 @@
 }
 
 @media (max-width: 600px) {
+  .admin-prices-header {
+    padding: 1.5rem 1rem;
+  }
+
+  .admin-prices-section {
+    padding: 1rem;
+  }
+
+  .admin-prices-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+
   .admin-prices-table th,
   .admin-prices-table td {
     padding: 0.75rem;
     font-size: 0.9rem;
+  }
+
+  .admin-prices-actions {
+    flex-direction: column;
+  }
+
+  .admin-prices-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .weekend-day-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

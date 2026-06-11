@@ -43,6 +43,26 @@ export function suggestGuestColor(usedColors: Iterable<string>, seed: string): s
   return available ?? colorFromSeed(seed);
 }
 
+/** Choose dark or white label text so guest names stay readable on any bar color. */
+export function readableTextColor(color: string): 'white' | '#3a2f20' {
+  const c = color.trim().toLowerCase();
+  const hex = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = h.split('').map((ch) => ch + ch).join('');
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    return luminance > 165 ? '#3a2f20' : 'white';
+  }
+  const hsl = c.match(/^hsl\(\s*[\d.]+\s*,\s*[\d.]+%\s*,\s*([\d.]+)%\s*\)$/);
+  if (hsl) {
+    return Number(hsl[1]) > 62 ? '#3a2f20' : 'white';
+  }
+  return 'white';
+}
+
 /** Stored color wins; otherwise derive a stable unique color from the reservation id. */
 export function resolveReservationColor(
   guestColor: string | undefined,

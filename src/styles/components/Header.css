@@ -7,12 +7,16 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  width: 100%;
 }
 
 .header .container {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  width: 100%;
+  max-width: var(--layout-max-width);
+  padding-inline: var(--layout-padding);
 }
 
 .logo h1 {
@@ -100,7 +104,34 @@
   cursor: pointer;
 }
 
-@media (max-width: 1100px) {
+@media (min-width: 1200px) {
+  .logo h1 {
+    font-size: 2rem;
+  }
+
+  .nav-link {
+    font-size: 1.05rem;
+    padding: 0.55rem 1.1rem;
+  }
+}
+
+/* Touch phones/tablets — keep header readable when zoomed out (e.g. Oppo landscape) */
+@media (hover: none) and (pointer: coarse) {
+  .header {
+    padding: 0.9rem 0;
+  }
+
+  .logo h1 {
+    font-size: 1.65rem;
+  }
+
+  .nav-toggle {
+    font-size: 1.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+@media (max-width: 1100px) and (hover: hover) {
   .nav {
     gap: 0.5rem;
   }
