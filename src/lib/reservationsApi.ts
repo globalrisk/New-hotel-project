@@ -19,9 +19,16 @@ export interface Reservation {
   guestColor: string;
   /** Each room held by this customer, with its own dates. */
   rooms: RoomStay[];
+  /** Auth user who created the booking (empty for imports before audit). */
+  createdByEmail: string;
+  /** Auth user who last updated the booking. */
+  updatedByEmail: string;
 }
 
-export type ReservationInput = Omit<Reservation, 'id'>;
+export type ReservationInput = Omit<
+  Reservation,
+  'id' | 'createdByEmail' | 'updatedByEmail'
+>;
 
 export type RevisionAction = 'update' | 'delete';
 
@@ -41,6 +48,8 @@ interface ReservationRow {
   guests: number;
   notes: string;
   guest_color: string;
+  created_by_email?: string;
+  updated_by_email?: string;
   reservation_rooms?: Array<{
     room_unit_id: string;
     check_in: string;
@@ -56,6 +65,8 @@ function rowToReservation(row: ReservationRow): Reservation {
     guests: row.guests,
     notes: row.notes,
     guestColor: row.guest_color ?? '',
+    createdByEmail: row.created_by_email ?? '',
+    updatedByEmail: row.updated_by_email ?? '',
     rooms: (row.reservation_rooms ?? []).map((r) => ({
       roomUnitId: r.room_unit_id,
       checkIn: r.check_in,
@@ -72,6 +83,15 @@ function inputToRow(input: ReservationInput) {
     notes: input.notes,
     guest_color: input.guestColor,
   };
+}
+
+async function currentActor(): Promise<{ userId: string; email: string } | null> {
+  if (!supabase) return null;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+  return { userId: user.id, email: user.email ?? '' };
 }
 
 // --- localStorage fallback (used when Supabase is not configured) ---
@@ -195,7 +215,12 @@ async function restoreDeletedReservation(
   input: ReservationInput,
 ): Promise<Reservation> {
   if (!supabase) {
-    const reservation: Reservation = { ...input, id };
+    const reservation: Reservation = {
+      ...input,
+      id,
+      createdByEmail: '',
+      updatedByEmail: '',
+    };
     saveLocal([...loadLocal(), reservation]);
     return reservation;
   }
@@ -207,19 +232,33 @@ async function restoreDeletedReservation(
   if (insertError) throw new Error(insertError.message);
 
   await saveRooms(id, input.rooms);
-  return { ...input, id };
+  const restored = await getReservationById(id);
+  if (!restored) throw new Error('Failed to restore reservation');
+  return restored;
 }
 
 async function applyReservation(id: string, input: ReservationInput): Promise<Reservation> {
   if (!supabase) {
-    const updated: Reservation = { ...input, id };
+    const existing = loadLocal().find((r) => r.id === id);
+    const updated: Reservation = {
+      ...input,
+      id,
+      createdByEmail: existing?.createdByEmail ?? '',
+      updatedByEmail: '',
+    };
     saveLocal(loadLocal().map((r) => (r.id === id ? updated : r)));
     return updated;
   }
 
+  const actor = await currentActor();
   const { data, error } = await supabase
     .from('reservations')
-    .update({ ...inputToRow(input), updated_at: new Date().toISOString() })
+    .update({
+      ...inputToRow(input),
+      updated_at: new Date().toISOString(),
+      updated_by: actor?.userId ?? null,
+      updated_by_email: actor?.email ?? '',
+    })
     .eq('id', id)
     .select()
     .single();
@@ -300,14 +339,24 @@ async function saveRooms(reservationId: string, rooms: RoomStay[]) {
 
 export async function createReservation(input: ReservationInput): Promise<Reservation> {
   if (!supabase) {
-    const reservation: Reservation = { ...input, id: generateId() };
+    const reservation: Reservation = {
+      ...input,
+      id: generateId(),
+      createdByEmail: '',
+      updatedByEmail: '',
+    };
     saveLocal([...loadLocal(), reservation]);
     return reservation;
   }
 
+  const actor = await currentActor();
   const { data, error } = await supabase
     .from('reservations')
-    .insert(inputToRow(input))
+    .insert({
+      ...inputToRow(input),
+      created_by: actor?.userId ?? null,
+      created_by_email: actor?.email ?? '',
+    })
     .select()
     .single();
   if (error) {
@@ -329,14 +378,25 @@ export async function updateReservation(
   }
 
   if (!supabase) {
-    const updated: Reservation = { ...input, id };
+    const updated: Reservation = {
+      ...input,
+      id,
+      createdByEmail: current?.createdByEmail ?? '',
+      updatedByEmail: '',
+    };
     saveLocal(loadLocal().map((r) => (r.id === id ? updated : r)));
     return updated;
   }
 
+  const actor = await currentActor();
   const { data, error } = await supabase
     .from('reservations')
-    .update({ ...inputToRow(input), updated_at: new Date().toISOString() })
+    .update({
+      ...inputToRow(input),
+      updated_at: new Date().toISOString(),
+      updated_by: actor?.userId ?? null,
+      updated_by_email: actor?.email ?? '',
+    })
     .eq('id', id)
     .select()
     .single();

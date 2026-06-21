@@ -18,6 +18,7 @@ dist-ssr
 !.env.example
 
 # Editor directories and files
+.cursor/mcp.json
 .vscode/*
 !.vscode/extensions.json
 .idea

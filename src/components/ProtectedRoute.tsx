@@ -3,8 +3,16 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { isSupabaseConfigured } from '../lib/supabase';
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth();
+type RequiredRole = 'admin' | 'staff';
+
+export default function ProtectedRoute({
+  children,
+  requiredRole = 'staff',
+}: {
+  children: React.ReactNode;
+  requiredRole?: RequiredRole;
+}) {
+  const { session, loading, roleLoading, isAdmin, canAccessAdmin } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
 
@@ -16,7 +24,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
 
-  if (loading) {
+  if (loading || roleLoading) {
     return (
       <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
         <p>{t('auth.loading')}</p>
@@ -26,6 +34,22 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
 
   if (!session) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (!canAccessAdmin) {
+    return (
+      <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
+        <p>{t('auth.noRole')}</p>
+      </div>
+    );
+  }
+
+  if (requiredRole === 'admin' && !isAdmin) {
+    return (
+      <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
+        <p>{t('auth.adminRequired')}</p>
+      </div>
+    );
   }
 
   return children;

@@ -22,7 +22,7 @@ const ADMIN_NAV = [
 
 export default function Header() {
   const { language, setLanguage, t } = useLanguage();
-  const { session, signOut } = useAuth();
+  const { session, signOut, isAdmin, canAccessAdmin } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -62,7 +62,8 @@ export default function Header() {
             </NavLink>
           ))}
           {session &&
-            ADMIN_NAV.map((item) => (
+            canAccessAdmin &&
+            ADMIN_NAV.filter((item) => isAdmin || item.to === '/admin/rooms').map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

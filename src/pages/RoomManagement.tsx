@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
 import { roomUnits, type RoomUnit } from '../data/roomUnits';
@@ -120,6 +121,7 @@ function selectionMatchesReservation(
 
 export default function RoomManagement() {
   const { t, roomName, getDayLong, getDayShort } = useLanguage();
+  const { canModify } = useAuth();
   const { weekendDays } = useRooms();
   const isMobile = useMediaQuery('(max-width: 768px)');
 
@@ -141,6 +143,7 @@ export default function RoomManagement() {
     null,
   );
   const [mobileFormExpanded, setMobileFormExpanded] = useState(false);
+  const [viewingReservation, setViewingReservation] = useState<Reservation | null>(null);
   const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const pendingScrollTodayRef = useRef(false);
@@ -188,6 +191,11 @@ export default function RoomManagement() {
   }, []);
 
   const refreshUndoable = async () => {
+    if (!canModify) {
+      setUndoableIds(new Set());
+      setDeletedUndo(null);
+      return;
+    }
     const ids = await fetchUndoableReservationIds();
     setUndoableIds(new Set(ids));
 
@@ -219,7 +227,7 @@ export default function RoomManagement() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canModify]);
 
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -395,6 +403,25 @@ export default function RoomManagement() {
   );
 
   const startDrag = (row: number, col: number) => {
+    const unit = roomUnits[row];
+    const iso = monthDays[col];
+    if (!unit || !iso) return;
+    const key = cellKey(unit.id, iso);
+
+    // Leaving view/edit mode when picking empty cells for a new booking
+    if (viewingReservation) {
+      setViewingReservation(null);
+      setForm(emptyForm());
+      setSelectedCells(new Set());
+      setMobileFormExpanded(false);
+      clearStatus();
+    } else if (form.editingId && !selectedCells.has(key)) {
+      setForm(emptyForm());
+      setSelectedCells(new Set());
+      setMobileFormExpanded(false);
+      clearStatus();
+    }
+
     setDrag({ anchorRow: row, anchorCol: col, row, col });
     clearStatus();
   };
@@ -438,6 +465,8 @@ export default function RoomManagement() {
   };
 
   const startEdit = (reservation: Reservation) => {
+    if (!canModify) return;
+    setViewingReservation(null);
     setSelectionFromReservation(reservation);
     setForm({
       editingId: reservation.id,
@@ -450,8 +479,29 @@ export default function RoomManagement() {
     clearStatus();
   };
 
+  const openBookingView = (reservation: Reservation) => {
+    setViewingReservation(reservation);
+    setForm({
+      editingId: null,
+      guestName: reservation.guestName,
+      guestPhone: reservation.guestPhone,
+      guests: String(reservation.guests),
+      notes: reservation.notes,
+      guestColor: reservation.guestColor || resolveReservationColor('', reservation.id),
+    });
+    clearSelection();
+    clearStatus();
+    if (isMobile) setMobileFormExpanded(true);
+  };
+
+  const openBooking = (reservation: Reservation) => {
+    if (canModify) startEdit(reservation);
+    else openBookingView(reservation);
+  };
+
   const cancelEdit = () => {
     setForm(emptyForm());
+    setViewingReservation(null);
     clearSelection();
     clearStatus();
     setMobileFormExpanded(false);
@@ -467,11 +517,17 @@ export default function RoomManagement() {
   };
 
   const isFormPanelOpen =
-    isMobile && mobileFormExpanded && Boolean(selection || form.editingId);
+    isMobile &&
+    mobileFormExpanded &&
+    Boolean(selection || form.editingId || viewingReservation);
   const showMobileSelectionBar =
     isMobile &&
     !mobileFormExpanded &&
-    (Boolean(selection) || Boolean(form.editingId));
+    (Boolean(selection) || Boolean(form.editingId) || Boolean(viewingReservation));
+  const formReadOnly = Boolean(viewingReservation);
+  const displayedStays = viewingReservation?.rooms ?? selection;
+  const activeAuditReservation = viewingReservation ?? editingReservation;
+  const actorLabel = (email: string) => email.trim() || t('manage.unknownUser');
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -508,6 +564,11 @@ export default function RoomManagement() {
         );
         return;
       }
+    }
+
+    if (form.editingId && !canModify) {
+      setError(t('manage.errors.adminRequired'));
+      return;
     }
 
     const input: ReservationInput = {
@@ -834,7 +895,7 @@ export default function RoomManagement() {
                                     if (cellStayHoverKey) clearStayHighlight();
                                   }}
                                   onClick={() => {
-                                    if (unitStay) startEdit(unitStay.reservation);
+                                    if (unitStay) openBooking(unitStay.reservation);
                                   }}
                                 >
                                   {isBookedCell && activeReservation && (
@@ -895,7 +956,9 @@ export default function RoomManagement() {
         {showMobileSelectionBar && (
           <div className="mobile-selection-bar">
             <p className="mobile-selection-bar-text">
-              {form.editingId
+              {viewingReservation
+                ? t('manage.mobileViewSummary', { name: viewingReservation.guestName })
+                : form.editingId
                 ? t('manage.mobileEditingSummary', { name: form.guestName || '—' })
                 : t('manage.mobileSelectionSummary', { count: selection?.length ?? 0 })}
             </p>
@@ -903,10 +966,19 @@ export default function RoomManagement() {
               type="button"
               className="btn btn-primary"
               onClick={() => setMobileFormExpanded(true)}
+              disabled={Boolean(form.editingId) && !canModify}
             >
-              {t('manage.openForm')}
+              {viewingReservation ? t('manage.viewDetails') : t('manage.openForm')}
             </button>
-            {form.editingId ? (
+            {viewingReservation ? (
+              <button
+                type="button"
+                className="btn btn-secondary mobile-selection-clear"
+                onClick={cancelEdit}
+              >
+                {t('manage.closeView')}
+              </button>
+            ) : form.editingId && canModify ? (
               <button
                 type="button"
                 className="btn btn-secondary mobile-selection-clear"
@@ -914,7 +986,7 @@ export default function RoomManagement() {
               >
                 {t('manage.cancelEdit')}
               </button>
-            ) : (
+            ) : !form.editingId ? (
               <button
                 type="button"
                 className="btn btn-secondary mobile-selection-clear"
@@ -926,7 +998,7 @@ export default function RoomManagement() {
               >
                 {t('manage.clearSelection')}
               </button>
-            )}
+            ) : null}
           </div>
         )}
 
@@ -943,13 +1015,40 @@ export default function RoomManagement() {
               ×
             </button>
           )}
-          <h2>{form.editingId ? t('manage.editBooking') : t('manage.addBooking')}</h2>
+          <h2>
+            {viewingReservation
+              ? t('manage.viewBooking')
+              : form.editingId && canModify
+                ? t('manage.editBooking')
+                : t('manage.addBooking')}
+          </h2>
+
+          {!canModify && !viewingReservation && (
+            <p className="room-manage-info">{t('manage.staffReadOnly')}</p>
+          )}
+
+          {activeAuditReservation && (
+            <div className="booking-audit">
+              <p>
+                {t('manage.addedBy', {
+                  email: actorLabel(activeAuditReservation.createdByEmail),
+                })}
+              </p>
+              {activeAuditReservation.updatedByEmail.trim() && (
+                <p>
+                  {t('manage.lastUpdatedBy', {
+                    email: actorLabel(activeAuditReservation.updatedByEmail),
+                  })}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="selection-summary">
-            {selection ? (
+            {displayedStays ? (
               <>
                 <ul className="selection-stays">
-                  {selection.map((stay) => (
+                  {displayedStays.map((stay) => (
                     <li key={stay.roomUnitId}>
                       <span className="selection-room-tag">
                         {unitLabel(stay.roomUnitId)}
@@ -963,7 +1062,7 @@ export default function RoomManagement() {
                     </li>
                   ))}
                 </ul>
-                {!form.editingId && (
+                {!form.editingId && !viewingReservation && (
                   <button
                     type="button"
                     className="btn-link"
@@ -1013,6 +1112,7 @@ export default function RoomManagement() {
           </div>
 
           <form onSubmit={handleSubmit} className="booking-form">
+            <fieldset className="booking-form-fieldset" disabled={formReadOnly}>
             <div className="booking-form-grid">
               <label>
                 <span>{t('manage.formGuestName')}</span>
@@ -1052,6 +1152,7 @@ export default function RoomManagement() {
               </label>
             </div>
 
+            {!formReadOnly && (
             <div className="color-picker">
               <span className="color-picker-label">{t('manage.formColor')}</span>
               <div className="color-swatches">
@@ -1083,21 +1184,31 @@ export default function RoomManagement() {
                 <span>{t('manage.formColorCustom')}</span>
               </label>
             </div>
+            )}
+            </fieldset>
 
             {error && <p className="room-manage-error">{error}</p>}
             {message && <p className="room-manage-success">{message}</p>}
 
             <div className="booking-form-actions">
-              <div className="booking-form-actions-row">
-                <button type="submit" className="btn btn-primary">
-                  {form.editingId ? t('manage.update') : t('manage.save')}
+              {formReadOnly ? (
+                <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
+                  {t('manage.closeView')}
                 </button>
-                {form.editingId && (
+              ) : (
+              <>
+              <div className="booking-form-actions-row">
+                {(!form.editingId || canModify) && (
+                  <button type="submit" className="btn btn-primary">
+                    {form.editingId ? t('manage.update') : t('manage.save')}
+                  </button>
+                )}
+                {form.editingId && canModify && (
                   <button type="button" className="btn btn-secondary" onClick={cancelEdit}>
                     {t('manage.cancelEdit')}
                   </button>
                 )}
-                {editingReservation && undoableIds.has(editingReservation.id) && (
+                {canModify && editingReservation && undoableIds.has(editingReservation.id) && (
                   <button
                     type="button"
                     className="btn btn-secondary"
@@ -1107,7 +1218,7 @@ export default function RoomManagement() {
                   </button>
                 )}
               </div>
-              {editingReservation && (
+              {canModify && editingReservation && (
                 <button
                   type="button"
                   className="btn btn-delete"
@@ -1116,13 +1227,15 @@ export default function RoomManagement() {
                   {t('manage.delete')}
                 </button>
               )}
+              </>
+              )}
             </div>
           </form>
         </section>
         </div>
 
         <section className="room-manage-section">
-          {deletedUndo && (
+          {canModify && deletedUndo && (
             <div className="undo-banner">
               <span>{t('manage.deletedUndoBanner', { name: deletedUndo.guestName })}</span>
               <button
@@ -1147,6 +1260,7 @@ export default function RoomManagement() {
                     <th>{t('manage.colRooms')}</th>
                     <th>{t('manage.colGuests')}</th>
                     <th>{t('manage.colNotes')}</th>
+                    <th>{t('manage.colAddedBy')}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -1173,7 +1287,12 @@ export default function RoomManagement() {
                       <td className="booking-notes" data-label={t('manage.colNotes')}>
                         {reservation.notes || '—'}
                       </td>
+                      <td className="booking-added-by" data-label={t('manage.colAddedBy')}>
+                        {actorLabel(reservation.createdByEmail)}
+                      </td>
                       <td className="booking-actions" data-label="">
+                        {canModify ? (
+                          <>
                         <button
                           type="button"
                           className="btn-link"
@@ -1197,6 +1316,16 @@ export default function RoomManagement() {
                         >
                           {t('manage.delete')}
                         </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-link"
+                            onClick={() => openBookingView(reservation)}
+                          >
+                            {t('manage.view')}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

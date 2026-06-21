@@ -30,7 +30,7 @@ export default function App() {
                   <Route
                     path="/admin/room-prices"
                     element={
-                      <ProtectedRoute>
+                      <ProtectedRoute requiredRole="admin">
                         <AdminRoomPrices />
                       </ProtectedRoute>
                     }
@@ -38,7 +38,7 @@ export default function App() {
                   <Route
                     path="/admin/rooms"
                     element={
-                      <ProtectedRoute>
+                      <ProtectedRoute requiredRole="staff">
                         <RoomManagement />
                       </ProtectedRoute>
                     }

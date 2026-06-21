@@ -505,6 +505,28 @@
 
 /* Selection summary (rooms + dates picked on the calendar) */
 
+.booking-audit {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(139, 115, 85, 0.06);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.booking-audit p {
+  margin: 0;
+}
+
+.booking-audit p + p {
+  margin-top: 0.25rem;
+}
+
+.booking-added-by {
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
 .selection-summary {
   margin-bottom: 1.25rem;
   padding: 1rem;
@@ -627,6 +649,20 @@
 }
 
 /* Booking form */
+
+.booking-form-fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.booking-form-fieldset:disabled .booking-form-grid input,
+.booking-form-fieldset:disabled .booking-form-grid textarea {
+  background: #f5f3ef;
+  color: var(--text-color, #333);
+  cursor: default;
+}
 
 .booking-form-grid {
   display: grid;
