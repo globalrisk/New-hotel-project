@@ -522,6 +522,98 @@
   margin-top: 0.25rem;
 }
 
+.booking-history {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.booking-history-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.booking-history-toggle {
+  padding: 0;
+  margin-bottom: 0.75rem;
+}
+
+.booking-history-header .booking-history-toggle {
+  margin-bottom: 0;
+}
+
+.booking-history-title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--primary-color);
+}
+
+.booking-history-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #777;
+  line-height: 1.4;
+}
+
+.booking-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.booking-history-item {
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.booking-history-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.booking-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  font-size: 0.82rem;
+  color: #666;
+  margin-bottom: 0.35rem;
+}
+
+.booking-history-action {
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.booking-history-guest {
+  margin: 0.15rem 0 0;
+}
+
+.booking-history-rooms {
+  margin: 0.35rem 0 0;
+}
+
+.booking-history-notes {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.booking-history-notes {
+  color: #555;
+  font-style: italic;
+}
+
 .booking-added-by {
   white-space: nowrap;
   font-size: 0.85rem;
@@ -771,6 +863,20 @@
 
 .booking-actions {
   white-space: nowrap;
+}
+
+.edit-stale-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  background: rgba(192, 57, 43, 0.1);
+  border: 1px solid rgba(192, 57, 43, 0.25);
+  color: #8b2918;
+  font-size: 0.92rem;
 }
 
 .undo-banner {

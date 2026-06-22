@@ -16,8 +16,9 @@ const PUBLIC_NAV = [
 ] as const;
 
 const ADMIN_NAV = [
-  { to: '/admin/room-prices', key: 'nav.managePrices' },
+  { to: '/admin/room-prices', key: 'nav.managePrices', adminOnly: true },
   { to: '/admin/rooms', key: 'nav.manageRooms' },
+  { to: '/admin/booking-history', key: 'nav.bookingHistory' },
 ] as const;
 
 export default function Header() {
@@ -63,7 +64,7 @@ export default function Header() {
           ))}
           {session &&
             canAccessAdmin &&
-            ADMIN_NAV.filter((item) => isAdmin || item.to === '/admin/rooms').map((item) => (
+            ADMIN_NAV.filter((item) => isAdmin || !('adminOnly' in item && item.adminOnly)).map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

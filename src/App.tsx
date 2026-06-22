@@ -10,6 +10,7 @@ import Rooms from './pages/Rooms';
 import CalculateRoomsPrice from './pages/CalculateRoomsPrice';
 import AdminRoomPrices from './pages/AdminRoomPrices';
 import RoomManagement from './pages/RoomManagement';
+import BookingHistoryLog from './pages/BookingHistoryLog';
 import Login from './pages/Login';
 import './App.css';
 
@@ -40,6 +41,14 @@ export default function App() {
                     element={
                       <ProtectedRoute requiredRole="staff">
                         <RoomManagement />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/admin/booking-history"
+                    element={
+                      <ProtectedRoute requiredRole="staff">
+                        <BookingHistoryLog />
                       </ProtectedRoute>
                     }
                   />

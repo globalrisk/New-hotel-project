@@ -7,15 +7,21 @@ import { defaultRooms } from '../data/rooms';
 import {
   createReservation,
   deleteReservation,
+  fetchReservationHistory,
   fetchReservations,
   fetchRevisionForReservation,
   fetchUndoableReservationIds,
+  ReservationEditConflictError,
+  ReservationOverlapError,
   undoReservationChange,
   updateReservation,
   type Reservation,
+  type ReservationHistoryEntry,
   type ReservationInput,
   type RoomStay,
 } from '../lib/reservationsApi';
+import { rangesOverlap } from '../lib/reservationOverlap';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   GUEST_COLOR_PALETTE,
   readableTextColor,
@@ -24,10 +30,14 @@ import {
 } from '../utils/guestColor';
 import { dayOfWeekFromIso, formatDdMmYyyy, toIsoDateString, todayIso } from '../utils/date';
 import { useMediaQuery } from '../utils/useMediaQuery';
+import HistoryGuestSummary from '../components/HistoryGuestSummary';
+import HistoryRoomsSummary from '../components/HistoryRoomsSummary';
 import '../styles/pages/RoomManagement.css';
 
 interface ReservationForm {
   editingId: string | null;
+  /** updated_at when edit started — optimistic lock baseline. */
+  editUpdatedAt: string | null;
   guestName: string;
   guestPhone: string;
   guests: string;
@@ -50,6 +60,7 @@ interface UnitStay {
 function emptyForm(): ReservationForm {
   return {
     editingId: null,
+    editUpdatedAt: null,
     guestName: '',
     guestPhone: '',
     guests: '1',
@@ -61,6 +72,14 @@ function emptyForm(): ReservationForm {
 function isoToDdMmYyyy(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number);
   return formatDdMmYyyy(new Date(y, m - 1, d));
+}
+
+function isoToDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${formatDdMmYyyy(d)} ${hh}:${mm}`;
 }
 
 function addDaysIso(iso: string, days: number): string {
@@ -79,10 +98,6 @@ function diffDays(fromIso: string, toIso: string): number {
 /** A room stay occupies night `iso` when checkIn <= iso < checkOut. */
 function coversNight(stay: RoomStay, iso: string): boolean {
   return stay.checkIn <= iso && iso < stay.checkOut;
-}
-
-function rangesOverlap(aIn: string, aOut: string, bIn: string, bOut: string): boolean {
-  return aIn < bOut && bIn < aOut;
 }
 
 /** Overall span of a reservation across all of its rooms. */
@@ -144,6 +159,10 @@ export default function RoomManagement() {
   );
   const [mobileFormExpanded, setMobileFormExpanded] = useState(false);
   const [viewingReservation, setViewingReservation] = useState<Reservation | null>(null);
+  const [editStale, setEditStale] = useState(false);
+  const [bookingHistory, setBookingHistory] = useState<ReservationHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const pendingScrollTodayRef = useRef(false);
@@ -210,6 +229,15 @@ export default function RoomManagement() {
     setDeletedUndo(deleted);
   };
 
+  const reloadReservations = useCallback(async () => {
+    try {
+      const data = await fetchReservations();
+      setReservations(data);
+    } catch {
+      // Keep existing calendar data on background refresh failure.
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     fetchReservations()
@@ -228,6 +256,85 @@ export default function RoomManagement() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canModify]);
+
+  useEffect(() => {
+    if (!form.editingId || !form.editUpdatedAt) {
+      setEditStale(false);
+      return;
+    }
+    const latest = reservations.find((r) => r.id === form.editingId);
+    if (!latest) {
+      setEditStale(true);
+      return;
+    }
+    setEditStale(latest.updatedAt !== form.editUpdatedAt);
+  }, [form.editingId, form.editUpdatedAt, reservations]);
+
+  const activeHistoryId = viewingReservation?.id ?? form.editingId;
+
+  const loadBookingHistory = useCallback(async (reservationId: string) => {
+    setHistoryLoading(true);
+    try {
+      const rows = await fetchReservationHistory(reservationId);
+      setBookingHistory(rows);
+    } catch {
+      setBookingHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setHistoryOpen(false);
+    setBookingHistory([]);
+    setHistoryLoading(false);
+  }, [activeHistoryId]);
+
+  const openBookingHistory = () => {
+    if (!activeHistoryId) return;
+    setHistoryOpen(true);
+    void loadBookingHistory(activeHistoryId);
+  };
+
+  useEffect(() => {
+    const client = supabase;
+    if (!isSupabaseConfigured || !client) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void reloadReservations();
+        if (historyOpen && activeHistoryId) {
+          void loadBookingHistory(activeHistoryId);
+        }
+      }, 250);
+    };
+
+    const channel = client
+      .channel('room-management-reservations')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservation_rooms' },
+        scheduleReload,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservations' },
+        scheduleReload,
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'reservation_history' },
+        scheduleReload,
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void client.removeChannel(channel);
+    };
+  }, [reloadReservations, loadBookingHistory, historyOpen, activeHistoryId]);
 
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();
@@ -316,6 +423,21 @@ export default function RoomManagement() {
     const unit = roomUnits.find((u) => u.id === unitId);
     return unit?.label ?? unitId;
   };
+
+  const overlapErrorMessage = (err: ReservationOverlapError): string => {
+    if (!err.guestName) return t('manage.errors.overlapConcurrent');
+    return t('manage.errors.overlap', {
+      room: unitLabel(err.roomUnitId),
+      name: err.guestName,
+      from: isoToDdMmYyyy(err.checkIn),
+      to: isoToDdMmYyyy(err.checkOut),
+    });
+  };
+
+  const editConflictMessage = (updatedByEmail: string): string =>
+    t('manage.errors.editConflict', {
+      email: actorLabel(updatedByEmail),
+    });
 
   const roomsSummary = (reservation: Reservation): string =>
     reservation.rooms
@@ -468,8 +590,10 @@ export default function RoomManagement() {
     if (!canModify) return;
     setViewingReservation(null);
     setSelectionFromReservation(reservation);
+    setEditStale(false);
     setForm({
       editingId: reservation.id,
+      editUpdatedAt: reservation.updatedAt || null,
       guestName: reservation.guestName,
       guestPhone: reservation.guestPhone,
       guests: String(reservation.guests),
@@ -479,10 +603,18 @@ export default function RoomManagement() {
     clearStatus();
   };
 
+  const reloadEditingBooking = () => {
+    if (!form.editingId) return;
+    const latest = reservations.find((r) => r.id === form.editingId);
+    if (latest) startEdit(latest);
+    else cancelEdit();
+  };
+
   const openBookingView = (reservation: Reservation) => {
     setViewingReservation(reservation);
     setForm({
       editingId: null,
+      editUpdatedAt: null,
       guestName: reservation.guestName,
       guestPhone: reservation.guestPhone,
       guests: String(reservation.guests),
@@ -581,8 +713,11 @@ export default function RoomManagement() {
     };
 
     try {
-      if (form.editingId) {
-        const saved = await updateReservation(form.editingId, input);
+      const editingId = form.editingId;
+      if (editingId) {
+        const saved = await updateReservation(editingId, input, {
+          expectedUpdatedAt: form.editUpdatedAt ?? undefined,
+        });
         setReservations((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
       } else {
         const saved = await createReservation(input);
@@ -593,8 +728,20 @@ export default function RoomManagement() {
       setMessage(t('manage.saved'));
       setMobileFormExpanded(false);
       await refreshUndoable();
-    } catch {
-      setError(t('manage.errors.saveFailed'));
+      if (historyOpen && editingId) {
+        void loadBookingHistory(editingId);
+      }
+    } catch (err) {
+      if (err instanceof ReservationOverlapError) {
+        setError(overlapErrorMessage(err));
+        void reloadReservations();
+      } else if (err instanceof ReservationEditConflictError) {
+        setError(editConflictMessage(err.updatedByEmail));
+        setEditStale(true);
+        void reloadReservations();
+      } else {
+        setError(t('manage.errors.saveFailed'));
+      }
     }
   };
 
@@ -622,8 +769,13 @@ export default function RoomManagement() {
       }
       await refreshUndoable();
       setMessage(t('manage.undoDone', { name: restored.guestName }));
-    } catch {
-      setError(t('manage.errors.undoFailed'));
+    } catch (err) {
+      if (err instanceof ReservationOverlapError) {
+        setError(overlapErrorMessage(err));
+        void reloadReservations();
+      } else {
+        setError(t('manage.errors.undoFailed'));
+      }
     }
   };
 
@@ -1044,6 +1196,58 @@ export default function RoomManagement() {
             </div>
           )}
 
+          {activeHistoryId && !historyOpen && (
+            <button type="button" className="btn-link booking-history-toggle" onClick={openBookingHistory}>
+              {t('manage.showHistory')}
+            </button>
+          )}
+
+          {activeHistoryId && historyOpen && (
+            <div className="booking-history">
+              <div className="booking-history-header">
+                <h3 className="booking-history-title">{t('manage.historyTitle')}</h3>
+                <button
+                  type="button"
+                  className="btn-link booking-history-toggle"
+                  onClick={() => setHistoryOpen(false)}
+                >
+                  {t('manage.hideHistory')}
+                </button>
+              </div>
+              <p className="booking-history-hint">{t('manage.historyUpdateHint')}</p>
+              {historyLoading ? (
+                <p className="room-manage-info">{t('manage.historyLoading')}</p>
+              ) : bookingHistory.length === 0 ? (
+                <p className="room-manage-info">{t('manage.historyEmpty')}</p>
+              ) : (
+                <ol className="booking-history-list">
+                  {bookingHistory.map((entry) => (
+                    <li key={entry.id} className="booking-history-item">
+                      <div className="booking-history-meta">
+                        <span className="booking-history-action">
+                          {t(`manage.historyAction.${entry.action}`)}
+                        </span>
+                        <time dateTime={entry.createdAt}>{isoToDateTime(entry.createdAt)}</time>
+                        <span className="booking-history-actor">
+                          {actorLabel(entry.changedByEmail)}
+                        </span>
+                      </div>
+                      <div className="booking-history-guest">
+                        <HistoryGuestSummary snapshot={entry.snapshot} />
+                      </div>
+                      <div className="booking-history-rooms">
+                        <HistoryRoomsSummary rooms={entry.snapshot.rooms} />
+                      </div>
+                      {entry.snapshot.notes.trim() && (
+                        <p className="booking-history-notes">{entry.snapshot.notes.trim()}</p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
+
           <div className="selection-summary">
             {displayedStays ? (
               <>
@@ -1187,6 +1391,19 @@ export default function RoomManagement() {
             )}
             </fieldset>
 
+            {editStale && form.editingId && (
+              <div className="edit-stale-banner" role="status">
+                <span>
+                  {t('manage.editStale', {
+                    email: actorLabel(editingReservation?.updatedByEmail ?? ''),
+                  })}
+                </span>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={reloadEditingBooking}>
+                  {t('manage.reloadBooking')}
+                </button>
+              </div>
+            )}
+
             {error && <p className="room-manage-error">{error}</p>}
             {message && <p className="room-manage-success">{message}</p>}
 
@@ -1199,7 +1416,7 @@ export default function RoomManagement() {
               <>
               <div className="booking-form-actions-row">
                 {(!form.editingId || canModify) && (
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={editStale}>
                     {form.editingId ? t('manage.update') : t('manage.save')}
                   </button>
                 )}
