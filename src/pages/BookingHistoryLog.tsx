@@ -4,6 +4,14 @@ import HistoryRoomsSummary, { roomsSearchText } from '../components/HistoryRooms
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
+  ACTIVE_PROPERTY_STORAGE_KEY,
+  getProperty,
+  historyEntryBelongsToProperty,
+  PROPERTIES,
+  readStoredPropertyId,
+  type PropertyId,
+} from '../data/properties';
+import {
   deleteReservationHistoryEntries,
   fetchAllReservationHistory,
   type HistoryAction,
@@ -11,6 +19,7 @@ import {
 } from '../lib/reservationsApi';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { formatDdMmYyyy } from '../utils/date';
+import '../styles/components/PropertySwitcher.css';
 import '../styles/pages/BookingHistoryLog.css';
 
 type ActionFilter = 'all' | HistoryAction;
@@ -26,6 +35,7 @@ function isoToDateTime(iso: string): string {
 export default function BookingHistoryLog() {
   const { t } = useLanguage();
   const { isAdmin } = useAuth();
+  const [activePropertyId, setActivePropertyId] = useState<PropertyId>(readStoredPropertyId);
   const [entries, setEntries] = useState<ReservationHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,6 +46,25 @@ export default function BookingHistoryLog() {
   const [deleting, setDeleting] = useState(false);
 
   const actorLabel = (email: string) => email.trim() || t('manage.unknownUser');
+
+  const propertyLabel = (propertyId: PropertyId) =>
+    t(`manage.properties.${getProperty(propertyId).labelKey}`);
+
+  const switchProperty = (nextPropertyId: PropertyId) => {
+    if (nextPropertyId === activePropertyId) return;
+    setActivePropertyId(nextPropertyId);
+    setSelectedIds(new Set());
+    try {
+      localStorage.setItem(ACTIVE_PROPERTY_STORAGE_KEY, nextPropertyId);
+    } catch {
+      // Ignore.
+    }
+  };
+
+  const propertyEntries = useMemo(
+    () => entries.filter((entry) => historyEntryBelongsToProperty(entry, activePropertyId)),
+    [entries, activePropertyId],
+  );
 
   const loadEntries = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) {
@@ -94,7 +123,7 @@ export default function BookingHistoryLog() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return entries.filter((entry) => {
+    return propertyEntries.filter((entry) => {
       if (actionFilter !== 'all' && entry.action !== actionFilter) return false;
       if (!q) return true;
       const haystack = [
@@ -108,7 +137,7 @@ export default function BookingHistoryLog() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [entries, actionFilter, search]);
+  }, [propertyEntries, actionFilter, search]);
 
   const filteredIds = useMemo(() => filtered.map((entry) => entry.id), [filtered]);
   const allFilteredSelected =
@@ -164,6 +193,24 @@ export default function BookingHistoryLog() {
 
       <div className="container history-log-content">
         <section className="history-log-panel">
+          <div
+            className="property-switcher history-log-property-switcher"
+            role="tablist"
+            aria-label={t('manage.propertySwitch')}
+          >
+            {PROPERTIES.map((property) => (
+              <button
+                key={property.id}
+                type="button"
+                role="tab"
+                aria-selected={activePropertyId === property.id}
+                className={`property-switcher-btn${activePropertyId === property.id ? ' is-active' : ''}`}
+                onClick={() => switchProperty(property.id)}
+              >
+                {propertyLabel(property.id)}
+              </button>
+            ))}
+          </div>
           <div className="history-log-toolbar">
             <label className="history-log-search">
               <span>{t('historyLog.search')}</span>
@@ -282,9 +329,13 @@ export default function BookingHistoryLog() {
             </div>
           )}
 
-          {!loading && !error && entries.length > 0 && (
+          {!loading && !error && propertyEntries.length > 0 && (
             <p className="history-log-count">
-              {t('historyLog.showing', { shown: filtered.length, total: entries.length })}
+              {t('historyLog.showing', {
+                shown: filtered.length,
+                total: propertyEntries.length,
+                property: propertyLabel(activePropertyId),
+              })}
               {isAdmin && selectedIds.size > 0 && (
                 <> · {t('historyLog.deleteSelected')} ({selectedIds.size})</>
               )}

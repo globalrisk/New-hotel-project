@@ -1,8 +1,9 @@
+import type { PropertyId } from '../data/properties';
 import type { Reservation } from './reservationsApi';
 
-const DRAFT_KEY = 'coto-queen-room-management-draft';
-/** Legacy key — sessionStorage was cleared when mobile browsers evicted the tab. */
-const LEGACY_DRAFT_KEY = DRAFT_KEY;
+const DRAFT_KEY_PREFIX = 'room-management-draft';
+/** Legacy key — single-property drafts before multi-property support. */
+const LEGACY_DRAFT_KEY = 'coto-queen-room-management-draft';
 
 export interface RoomManagementDraftForm {
   editingId: string | null;
@@ -17,12 +18,17 @@ export interface RoomManagementDraftForm {
 
 export interface RoomManagementDraft {
   version: 1;
+  propertyId: PropertyId;
   form: RoomManagementDraftForm;
   selectedCells: string[];
   mobileFormExpanded: boolean;
   viewingReservation: Reservation | null;
   monthDate: string;
   historyOpen: boolean;
+}
+
+function draftKey(propertyId: PropertyId): string {
+  return `${DRAFT_KEY_PREFIX}-${propertyId}`;
 }
 
 function readStorage(): Storage | null {
@@ -33,48 +39,56 @@ function readStorage(): Storage | null {
   }
 }
 
-function migrateLegacySessionDraft(): RoomManagementDraft | null {
+function migrateLegacySessionDraft(propertyId: PropertyId): RoomManagementDraft | null {
   try {
     const raw = sessionStorage.getItem(LEGACY_DRAFT_KEY);
     if (!raw) return null;
     sessionStorage.removeItem(LEGACY_DRAFT_KEY);
     const draft = JSON.parse(raw) as RoomManagementDraft;
     if (draft.version !== 1 || !draft.form) return null;
-    saveRoomManagementDraft(draft);
-    return draft;
+    const migrated = { ...draft, propertyId: draft.propertyId ?? 'coto-queen' };
+    saveRoomManagementDraft(migrated, migrated.propertyId);
+    return migrated.propertyId === propertyId ? migrated : null;
   } catch {
     return null;
   }
 }
 
-export function loadRoomManagementDraft(): RoomManagementDraft | null {
+export function loadRoomManagementDraft(propertyId: PropertyId): RoomManagementDraft | null {
   try {
     const storage = readStorage();
-    if (!storage) return migrateLegacySessionDraft();
+    const key = draftKey(propertyId);
+    if (!storage) return migrateLegacySessionDraft(propertyId);
 
-    const raw = storage.getItem(DRAFT_KEY);
-    if (!raw) return migrateLegacySessionDraft();
+    const raw = storage.getItem(key);
+    if (!raw) {
+      if (propertyId === 'coto-queen') return migrateLegacySessionDraft(propertyId);
+      return null;
+    }
 
     const draft = JSON.parse(raw) as RoomManagementDraft;
     if (draft.version !== 1 || !draft.form) return null;
-    return draft;
+    if (draft.propertyId && draft.propertyId !== propertyId) return null;
+    return { ...draft, propertyId };
   } catch {
     return null;
   }
 }
 
-export function saveRoomManagementDraft(draft: RoomManagementDraft): void {
+export function saveRoomManagementDraft(draft: RoomManagementDraft, propertyId: PropertyId): void {
   try {
-    readStorage()?.setItem(DRAFT_KEY, JSON.stringify(draft));
+    readStorage()?.setItem(draftKey(propertyId), JSON.stringify({ ...draft, propertyId }));
   } catch {
     // Ignore quota / private mode errors.
   }
 }
 
-export function clearRoomManagementDraft(): void {
+export function clearRoomManagementDraft(propertyId: PropertyId): void {
   try {
-    readStorage()?.removeItem(DRAFT_KEY);
-    sessionStorage.removeItem(LEGACY_DRAFT_KEY);
+    readStorage()?.removeItem(draftKey(propertyId));
+    if (propertyId === 'coto-queen') {
+      sessionStorage.removeItem(LEGACY_DRAFT_KEY);
+    }
   } catch {
     // Ignore.
   }
@@ -97,10 +111,10 @@ export function hasDraftWork(draft: {
   );
 }
 
-export function loadInitialMobileDraft(): RoomManagementDraft | null {
+export function loadInitialMobileDraft(propertyId: PropertyId): RoomManagementDraft | null {
   if (typeof window === 'undefined') return null;
   if (!window.matchMedia('(max-width: 768px)').matches) return null;
-  const draft = loadRoomManagementDraft();
+  const draft = loadRoomManagementDraft(propertyId);
   if (!draft || !hasDraftWork(draft)) return null;
   return draft;
 }

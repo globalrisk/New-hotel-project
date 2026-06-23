@@ -1,11 +1,11 @@
 import { useLanguage } from '../context/LanguageContext';
-import { roomUnits } from '../data/roomUnits';
+import { unitLabelById } from '../data/properties';
 import type { RoomStay } from '../lib/reservationsApi';
 import { formatDdMmYyyy } from '../utils/date';
 import './HistoryRoomsSummary.css';
 
 function unitLabel(unitId: string): string {
-  return roomUnits.find((u) => u.id === unitId)?.label ?? unitId;
+  return unitLabelById(unitId);
 }
 
 function diffDays(fromIso: string, toIso: string): number {

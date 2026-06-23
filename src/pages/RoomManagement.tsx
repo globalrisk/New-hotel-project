@@ -2,8 +2,15 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useRooms } from '../context/RoomsContext';
-import { roomUnits, type RoomUnit } from '../data/roomUnits';
-import { defaultRooms } from '../data/rooms';
+import {
+  ACTIVE_PROPERTY_STORAGE_KEY,
+  getProperty,
+  PROPERTIES,
+  readStoredPropertyId,
+  reservationBelongsToProperty,
+  type PropertyId,
+  type RoomUnit,
+} from '../data/properties';
 import {
   createReservation,
   deleteReservation,
@@ -40,6 +47,7 @@ import { useMediaQuery } from '../utils/useMediaQuery';
 import HistoryGuestSummary from '../components/HistoryGuestSummary';
 import HistoryRoomsSummary from '../components/HistoryRoomsSummary';
 import '../styles/pages/RoomManagement.css';
+import '../styles/components/PropertySwitcher.css';
 
 interface ReservationForm {
   editingId: string | null;
@@ -152,7 +160,20 @@ export default function RoomManagement() {
   const { weekendDays } = useRooms();
   const isMobile = useMediaQuery('(max-width: 768px)');
 
-  const initialMobileDraft = useMemo(() => loadInitialMobileDraft(), []);
+  const [activePropertyId, setActivePropertyId] = useState<PropertyId>(readStoredPropertyId);
+  const activeProperty = useMemo(() => getProperty(activePropertyId), [activePropertyId]);
+  const propertyUnits = activeProperty.units;
+
+  const initialMobileDraft = useMemo(
+    () => loadInitialMobileDraft(activePropertyId),
+    [activePropertyId],
+  );
+
+  const propertyLabel = (propertyId: PropertyId) =>
+    t(`manage.properties.${getProperty(propertyId).labelKey}`);
+
+  const roomTypeLabel = (roomTypeId: number, labelKey?: string) =>
+    labelKey ? t(`manage.${labelKey}`) : roomName(roomTypeId);
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -208,6 +229,7 @@ export default function RoomManagement() {
     const snap = draftSnapshotRef.current;
     const draft: RoomManagementDraft = {
       version: 1,
+      propertyId: activePropertyId,
       form: snap.form,
       selectedCells: snap.selectedCells,
       mobileFormExpanded: snap.mobileFormExpanded,
@@ -217,12 +239,12 @@ export default function RoomManagement() {
     };
 
     if (!hasDraftWork(draft)) {
-      clearRoomManagementDraft();
+      clearRoomManagementDraft(activePropertyId);
       return;
     }
 
-    saveRoomManagementDraft(draft);
-  }, [isMobile]);
+    saveRoomManagementDraft(draft, activePropertyId);
+  }, [isMobile, activePropertyId]);
 
   useEffect(() => {
     draftSnapshotRef.current = {
@@ -448,45 +470,51 @@ export default function RoomManagement() {
 
   const unitsByType = useMemo(() => {
     const groups = new Map<number, RoomUnit[]>();
-    for (const unit of roomUnits) {
+    for (const unit of propertyUnits) {
       const list = groups.get(unit.roomTypeId) ?? [];
       list.push(unit);
       groups.set(unit.roomTypeId, list);
     }
     return groups;
-  }, []);
+  }, [propertyUnits]);
 
   const unitRowIndex = useMemo(() => {
     const map = new Map<string, number>();
-    roomUnits.forEach((unit, index) => map.set(unit.id, index));
+    propertyUnits.forEach((unit, index) => map.set(unit.id, index));
     return map;
-  }, []);
+  }, [propertyUnits]);
+
+  const propertyReservations = useMemo(
+    () => reservations.filter((r) => reservationBelongsToProperty(r, activePropertyId)),
+    [reservations, activePropertyId],
+  );
 
   const staysByUnit = useMemo(() => {
     const map = new Map<string, UnitStay[]>();
-    for (const reservation of reservations) {
+    for (const reservation of propertyReservations) {
       for (const stay of reservation.rooms) {
+        if (!unitRowIndex.has(stay.roomUnitId)) continue;
         const list = map.get(stay.roomUnitId) ?? [];
         list.push({ reservation, stay });
         map.set(stay.roomUnitId, list);
       }
     }
     return map;
-  }, [reservations]);
+  }, [propertyReservations, unitRowIndex]);
 
   const today = todayIso();
   const bookedTodayCount = useMemo(
     () =>
-      roomUnits.filter((unit) =>
+      propertyUnits.filter((unit) =>
         (staysByUnit.get(unit.id) ?? []).some(({ stay }) => coversNight(stay, today)),
       ).length,
-    [staysByUnit, today],
+    [propertyUnits, staysByUnit, today],
   );
 
   const monthReservations = useMemo(() => {
     const monthStart = monthDays[0];
     const afterMonthEnd = addDaysIso(monthDays[monthDays.length - 1], 1);
-    return reservations
+    return propertyReservations
       .filter((r) =>
         r.rooms.some((stay) =>
           rangesOverlap(stay.checkIn, stay.checkOut, monthStart, afterMonthEnd),
@@ -495,7 +523,7 @@ export default function RoomManagement() {
       .sort((a, b) =>
         reservationSpan(a).checkIn.localeCompare(reservationSpan(b).checkIn),
       );
-  }, [reservations, monthDays]);
+  }, [propertyReservations, monthDays]);
 
   /** Per-room stays derived from the selected calendar cells (one range per row). */
   const selection = useMemo((): RoomStay[] | null => {
@@ -507,7 +535,7 @@ export default function RoomManagement() {
       byUnit.set(unitId, list);
     }
     if (byUnit.size === 0) return null;
-    return roomUnits
+    return propertyUnits
       .filter((unit) => byUnit.has(unit.id))
       .map((unit) => {
         const isos = byUnit.get(unit.id)!.sort();
@@ -517,10 +545,10 @@ export default function RoomManagement() {
           checkOut: addDaysIso(isos[isos.length - 1], 1),
         };
       });
-  }, [selectedCells]);
+  }, [selectedCells, propertyUnits]);
 
   const unitLabel = (unitId: string): string => {
-    const unit = roomUnits.find((u) => u.id === unitId);
+    const unit = propertyUnits.find((u) => u.id === unitId);
     return unit?.label ?? unitId;
   };
 
@@ -585,7 +613,7 @@ export default function RoomManagement() {
     const keys: string[] = [];
     for (let r = r1; r <= r2; r++) {
       for (let c = c1; c <= c2; c++) {
-        const unit = roomUnits[r];
+        const unit = propertyUnits[r];
         const iso = monthDays[c];
         if (unit && iso && isCellFree(unit.id, iso)) {
           keys.push(cellKey(unit.id, iso));
@@ -602,7 +630,7 @@ export default function RoomManagement() {
   );
 
   const startDrag = (row: number, col: number) => {
-    const unit = roomUnits[row];
+    const unit = propertyUnits[row];
     const iso = monthDays[col];
     if (!unit || !iso) return;
     const key = cellKey(unit.id, iso);
@@ -711,7 +739,7 @@ export default function RoomManagement() {
     clearSelection();
     clearStatus();
     setMobileFormExpanded(false);
-    clearRoomManagementDraft();
+    clearRoomManagementDraft(activePropertyId);
   };
 
   const collapseMobilePanel = () => {
@@ -781,7 +809,7 @@ export default function RoomManagement() {
     const editingReservationForSave = form.editingId
       ? reservations.find((r) => r.id === form.editingId)
       : null;
-    const blocked = blockedGuestColors(reservations, selection, form.editingId);
+    const blocked = blockedGuestColors(propertyReservations, selection, form.editingId);
     const guestColor = editingReservationForSave?.guestColor?.trim()
       ? editingReservationForSave.guestColor
       : assignGuestColor(
@@ -815,7 +843,7 @@ export default function RoomManagement() {
       clearSelection();
       setMessage(t('manage.saved'));
       setMobileFormExpanded(false);
-      clearRoomManagementDraft();
+      clearRoomManagementDraft(activePropertyId);
       if (historyOpen && editingId) {
         void loadBookingHistory(editingId);
       }
@@ -847,7 +875,7 @@ export default function RoomManagement() {
         clearSelection();
         setMobileFormExpanded(false);
         setViewingReservation(null);
-        clearRoomManagementDraft();
+        clearRoomManagementDraft(activePropertyId);
       }
       setMessage(t('manage.deleted'));
     } catch {
@@ -857,6 +885,26 @@ export default function RoomManagement() {
 
   const changeMonth = (delta: number) => {
     setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+  };
+
+  const switchProperty = (nextPropertyId: PropertyId) => {
+    if (nextPropertyId === activePropertyId) return;
+    flushMobileDraft();
+    setActivePropertyId(nextPropertyId);
+    try {
+      localStorage.setItem(ACTIVE_PROPERTY_STORAGE_KEY, nextPropertyId);
+    } catch {
+      // Ignore.
+    }
+    setForm(emptyForm());
+    setSelectedCells(new Set());
+    setViewingReservation(null);
+    setMobileFormExpanded(false);
+    setHistoryOpen(false);
+    setBookingHistory([]);
+    clearStatus();
+    scrollToTodayOnLoadRef.current = true;
+    pendingScrollTodayRef.current = false;
   };
 
   const goToToday = () => {
@@ -921,6 +969,20 @@ export default function RoomManagement() {
           className={`room-manage-section room-manage-grid-col${showMobileSelectionBar ? ' has-mobile-bar' : ''}`}
         >
           <div className="room-manage-toolbar">
+            <div className="property-switcher" role="tablist" aria-label={t('manage.propertySwitch')}>
+              {PROPERTIES.map((property) => (
+                <button
+                  key={property.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activePropertyId === property.id}
+                  className={`property-switcher-btn${activePropertyId === property.id ? ' is-active' : ''}`}
+                  onClick={() => switchProperty(property.id)}
+                >
+                  {propertyLabel(property.id)}
+                </button>
+              ))}
+            </div>
             <div className="calendar-nav">
               <div className="month-nav">
                 <button
@@ -950,7 +1012,7 @@ export default function RoomManagement() {
             <button type="button" className="occupancy-today-btn" onClick={goToToday}>
               {t('manage.todaySummary', {
                 booked: bookedTodayCount,
-                total: roomUnits.length,
+                total: propertyUnits.length,
               })}
             </button>
             <div className="occupancy-legend">
@@ -1012,12 +1074,14 @@ export default function RoomManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {defaultRooms.map((room) => (
-                    <Fragment key={room.id}>
+                  {activeProperty.roomTypes.map((roomType) => (
+                    <Fragment key={roomType.id}>
                       <tr className="type-row">
-                        <td colSpan={monthDays.length + 1}>{roomName(room.id)}</td>
+                        <td colSpan={monthDays.length + 1}>
+                          {roomTypeLabel(roomType.id, roomType.labelKey)}
+                        </td>
                       </tr>
-                      {(unitsByType.get(room.id) ?? []).map((unit) => {
+                      {(unitsByType.get(roomType.id) ?? []).map((unit) => {
                         const rowIndex = unitRowIndex.get(unit.id)!;
                         return (
                           <tr key={unit.id}>

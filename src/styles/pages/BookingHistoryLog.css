@@ -31,6 +31,10 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
+.history-log-property-switcher {
+  margin-bottom: 1.25rem;
+}
+
 .history-log-toolbar {
   display: flex;
   flex-wrap: wrap;
