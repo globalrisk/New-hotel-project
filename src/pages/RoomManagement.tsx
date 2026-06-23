@@ -1039,9 +1039,7 @@ export default function RoomManagement() {
             </div>
           </div>
 
-          {loading && <p className="room-manage-info">{t('manage.loading')}</p>}
           {loadError && <p className="room-manage-error">{loadError}</p>}
-
           {!loading && (
             <div className="occupancy-grid-wrap" ref={gridWrapRef}>
               <table className="occupancy-grid">

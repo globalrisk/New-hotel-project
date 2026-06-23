@@ -12,6 +12,7 @@ import AdminRoomPrices from './pages/AdminRoomPrices';
 import RoomManagement from './pages/RoomManagement';
 import BookingHistoryLog from './pages/BookingHistoryLog';
 import Login from './pages/Login';
+import LoadingOverlay from './components/LoadingOverlay';
 import './App.css';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
         <RoomsProvider>
           <Router>
             <div className="app">
+              <LoadingOverlay />
               <Header />
               <main className="main-content">
                 <Routes>

@@ -25,11 +25,7 @@ export default function ProtectedRoute({
   }
 
   if (loading || roleLoading) {
-    return (
-      <div className="container" style={{ padding: '3rem 1rem', textAlign: 'center' }}>
-        <p>{t('auth.loading')}</p>
-      </div>
-    );
+    return null;
   }
 
   if (!session) {

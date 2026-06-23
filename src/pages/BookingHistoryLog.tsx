@@ -254,7 +254,6 @@ export default function BookingHistoryLog() {
           <p className="history-log-hint">{t('manage.historyUpdateHint')}</p>
 
           {message && <p className="history-log-success">{message}</p>}
-          {loading && <p className="history-log-info">{t('historyLog.loading')}</p>}
           {error && <p className="history-log-error">{error}</p>}
           {!loading && !error && filtered.length === 0 && (
             <p className="history-log-info">{t('historyLog.empty')}</p>

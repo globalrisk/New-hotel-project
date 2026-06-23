@@ -37,6 +37,7 @@ const vi: TranslationTree = {
     label: 'Ngôn ngữ',
   },
   common: {
+    loading: 'Đang tải…',
     night: 'đêm',
     nights: 'đêm',
     guest: 'khách',
@@ -364,6 +365,7 @@ const en: TranslationTree = {
     label: 'Language',
   },
   common: {
+    loading: 'Loading…',
     night: 'night',
     nights: 'nights',
     guest: 'guest',
