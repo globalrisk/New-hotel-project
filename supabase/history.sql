@@ -1,4 +1,5 @@
--- Append-only edit history for reservations (never deleted on update).
+-- Append-only edit history for reservations by default.
+-- Admins may delete entries to reclaim storage (see delete policy below).
 -- Run after reservations.sql, roles.sql, and audit.sql.
 --
 -- Snapshot semantics:
@@ -33,7 +34,13 @@ create policy "staff insert reservation_history"
   to authenticated
   with check (public.is_staff_or_admin());
 
--- History is immutable: no update or delete policies.
+-- History is immutable for staff; admins may delete to free storage.
+
+drop policy if exists "admin delete reservation_history" on public.reservation_history;
+create policy "admin delete reservation_history"
+  on public.reservation_history for delete
+  to authenticated
+  using (public.is_admin());
 
 -- Realtime: refresh history log when new entries are appended.
 alter table public.reservation_history replica identity full;

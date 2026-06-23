@@ -7,13 +7,11 @@ import { defaultRooms } from '../data/rooms';
 import {
   createReservation,
   deleteReservation,
+  deleteReservationHistoryForBooking,
   fetchReservationHistory,
   fetchReservations,
-  fetchRevisionForReservation,
-  fetchUndoableReservationIds,
   ReservationEditConflictError,
   ReservationOverlapError,
-  undoReservationChange,
   updateReservation,
   type Reservation,
   type ReservationHistoryEntry,
@@ -21,6 +19,13 @@ import {
   type RoomStay,
 } from '../lib/reservationsApi';
 import { rangesOverlap } from '../lib/reservationOverlap';
+import {
+  clearRoomManagementDraft,
+  hasDraftWork,
+  loadInitialMobileDraft,
+  saveRoomManagementDraft,
+  type RoomManagementDraft,
+} from '../lib/roomManagementDraft';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   GUEST_COLOR_PALETTE,
@@ -134,39 +139,142 @@ function selectionMatchesReservation(
   );
 }
 
+function monthDateFromDraft(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (y && m && d) return new Date(y, m - 1, d);
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
 export default function RoomManagement() {
   const { t, roomName, getDayLong, getDayShort } = useLanguage();
   const { canModify } = useAuth();
   const { weekendDays } = useRooms();
   const isMobile = useMediaQuery('(max-width: 768px)');
 
+  const initialMobileDraft = useMemo(() => loadInitialMobileDraft(), []);
+
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [monthDate, setMonthDate] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-  const [form, setForm] = useState<ReservationForm>(() => emptyForm());
+  const [monthDate, setMonthDate] = useState(() =>
+    initialMobileDraft
+      ? monthDateFromDraft(initialMobileDraft.monthDate)
+      : (() => {
+          const now = new Date();
+          return new Date(now.getFullYear(), now.getMonth(), 1);
+        })(),
+  );
+  const [form, setForm] = useState<ReservationForm>(
+    () => initialMobileDraft?.form ?? emptyForm(),
+  );
   /** Selected nights as "unitId|iso" — picked directly on the calendar. */
-  const [selectedCells, setSelectedCells] = useState<Set<string>>(() => new Set());
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(
+    () => new Set(initialMobileDraft?.selectedCells ?? []),
+  );
   const [drag, setDrag] = useState<DragState | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [undoableIds, setUndoableIds] = useState<Set<string>>(() => new Set());
-  const [deletedUndo, setDeletedUndo] = useState<{ id: string; guestName: string } | null>(
-    null,
+  const [mobileFormExpanded, setMobileFormExpanded] = useState(
+    () => initialMobileDraft?.mobileFormExpanded ?? false,
   );
-  const [mobileFormExpanded, setMobileFormExpanded] = useState(false);
-  const [viewingReservation, setViewingReservation] = useState<Reservation | null>(null);
-  const [editStale, setEditStale] = useState(false);
+  const [viewingReservation, setViewingReservation] = useState<Reservation | null>(
+    () => initialMobileDraft?.viewingReservation ?? null,
+  );
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [bookingHistory, setBookingHistory] = useState<ReservationHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(
+    () => initialMobileDraft?.historyOpen ?? false,
+  );
   const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const pendingScrollTodayRef = useRef(false);
   const hoverClearRef = useRef<number | null>(null);
+  const skipDraftPersistRef = useRef(Boolean(initialMobileDraft));
+  const draftSnapshotRef = useRef({
+    form: initialMobileDraft?.form ?? emptyForm(),
+    selectedCells: initialMobileDraft?.selectedCells ?? [],
+    mobileFormExpanded: initialMobileDraft?.mobileFormExpanded ?? false,
+    viewingReservation: initialMobileDraft?.viewingReservation ?? null,
+    monthDate: initialMobileDraft?.monthDate ?? toIsoDateString(new Date()),
+    historyOpen: initialMobileDraft?.historyOpen ?? false,
+  });
+
+  const flushMobileDraft = useCallback(() => {
+    if (!isMobile || skipDraftPersistRef.current) return;
+
+    const snap = draftSnapshotRef.current;
+    const draft: RoomManagementDraft = {
+      version: 1,
+      form: snap.form,
+      selectedCells: snap.selectedCells,
+      mobileFormExpanded: snap.mobileFormExpanded,
+      viewingReservation: snap.viewingReservation,
+      monthDate: snap.monthDate,
+      historyOpen: snap.historyOpen,
+    };
+
+    if (!hasDraftWork(draft)) {
+      clearRoomManagementDraft();
+      return;
+    }
+
+    saveRoomManagementDraft(draft);
+  }, [isMobile]);
+
+  useEffect(() => {
+    draftSnapshotRef.current = {
+      form,
+      selectedCells: [...selectedCells],
+      mobileFormExpanded,
+      viewingReservation,
+      monthDate: toIsoDateString(monthDate),
+      historyOpen,
+    };
+  }, [form, selectedCells, mobileFormExpanded, viewingReservation, monthDate, historyOpen]);
+
+  useEffect(() => {
+    if (!isMobile) {
+      skipDraftPersistRef.current = false;
+      return;
+    }
+
+    skipDraftPersistRef.current = false;
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!isMobile || skipDraftPersistRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      flushMobileDraft();
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [isMobile, flushMobileDraft, form, selectedCells, mobileFormExpanded, viewingReservation, monthDate, historyOpen]);
+
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const saveImmediately = () => {
+      flushMobileDraft();
+    };
+
+    const saveOnHide = () => {
+      if (document.visibilityState === 'hidden') {
+        saveImmediately();
+      }
+    };
+
+    document.addEventListener('visibilitychange', saveOnHide);
+    window.addEventListener('pagehide', saveImmediately);
+    document.addEventListener('freeze', saveImmediately);
+    return () => {
+      document.removeEventListener('visibilitychange', saveOnHide);
+      window.removeEventListener('pagehide', saveImmediately);
+      document.removeEventListener('freeze', saveImmediately);
+    };
+  }, [isMobile, flushMobileDraft]);
 
   const stayHoverKey = (reservationId: string, unitId: string, checkIn: string) =>
     `${reservationId}|${unitId}|${checkIn}`;
@@ -209,26 +317,6 @@ export default function RoomManagement() {
     });
   }, []);
 
-  const refreshUndoable = async () => {
-    if (!canModify) {
-      setUndoableIds(new Set());
-      setDeletedUndo(null);
-      return;
-    }
-    const ids = await fetchUndoableReservationIds();
-    setUndoableIds(new Set(ids));
-
-    const deleteOnly = await Promise.all(
-      ids.map(async (id) => {
-        const revision = await fetchRevisionForReservation(id);
-        if (revision?.action !== 'delete') return null;
-        return { id, guestName: revision.snapshot.guestName };
-      }),
-    );
-    const deleted = deleteOnly.find(Boolean) ?? null;
-    setDeletedUndo(deleted);
-  };
-
   const reloadReservations = useCallback(async () => {
     try {
       const data = await fetchReservations();
@@ -250,25 +338,18 @@ export default function RoomManagement() {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    refreshUndoable();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canModify]);
+  }, [t]);
 
-  useEffect(() => {
-    if (!form.editingId || !form.editUpdatedAt) {
-      setEditStale(false);
-      return;
-    }
+  const editStale = useMemo(() => {
+    if (!form.editingId || !form.editUpdatedAt) return false;
+    if (savingEditId === form.editingId) return false;
     const latest = reservations.find((r) => r.id === form.editingId);
-    if (!latest) {
-      setEditStale(true);
-      return;
-    }
-    setEditStale(latest.updatedAt !== form.editUpdatedAt);
-  }, [form.editingId, form.editUpdatedAt, reservations]);
+    if (!latest) return true;
+    return latest.updatedAt !== form.editUpdatedAt;
+  }, [form.editingId, form.editUpdatedAt, reservations, savingEditId]);
 
   const activeHistoryId = viewingReservation?.id ?? form.editingId;
 
@@ -294,6 +375,19 @@ export default function RoomManagement() {
     if (!activeHistoryId) return;
     setHistoryOpen(true);
     void loadBookingHistory(activeHistoryId);
+  };
+
+  const clearBookingHistory = async () => {
+    if (!activeHistoryId || !canModify) return;
+    if (!window.confirm(t('manage.clearBookingHistoryConfirm'))) return;
+    clearStatus();
+    try {
+      const count = await deleteReservationHistoryForBooking(activeHistoryId);
+      setBookingHistory([]);
+      setMessage(t('manage.bookingHistoryCleared', { count }));
+    } catch {
+      setError(t('manage.historyDeleteFailed'));
+    }
   };
 
   useEffect(() => {
@@ -590,7 +684,6 @@ export default function RoomManagement() {
     if (!canModify) return;
     setViewingReservation(null);
     setSelectionFromReservation(reservation);
-    setEditStale(false);
     setForm({
       editingId: reservation.id,
       editUpdatedAt: reservation.updatedAt || null,
@@ -637,6 +730,7 @@ export default function RoomManagement() {
     clearSelection();
     clearStatus();
     setMobileFormExpanded(false);
+    clearRoomManagementDraft();
   };
 
   const collapseMobilePanel = () => {
@@ -712,8 +806,10 @@ export default function RoomManagement() {
       guestColor: activeColor,
     };
 
+    const editingId = form.editingId;
+    if (editingId) setSavingEditId(editingId);
+
     try {
-      const editingId = form.editingId;
       if (editingId) {
         const saved = await updateReservation(editingId, input, {
           expectedUpdatedAt: form.editUpdatedAt ?? undefined,
@@ -727,7 +823,7 @@ export default function RoomManagement() {
       clearSelection();
       setMessage(t('manage.saved'));
       setMobileFormExpanded(false);
-      await refreshUndoable();
+      clearRoomManagementDraft();
       if (historyOpen && editingId) {
         void loadBookingHistory(editingId);
       }
@@ -737,45 +833,12 @@ export default function RoomManagement() {
         void reloadReservations();
       } else if (err instanceof ReservationEditConflictError) {
         setError(editConflictMessage(err.updatedByEmail));
-        setEditStale(true);
         void reloadReservations();
       } else {
         setError(t('manage.errors.saveFailed'));
       }
-    }
-  };
-
-  const handleUndo = async (reservationId: string) => {
-    if (!window.confirm(t('manage.undoConfirm'))) return;
-    clearStatus();
-    try {
-      const restored = await undoReservationChange(reservationId);
-      if (!restored) {
-        setError(t('manage.errors.undoFailed'));
-        return;
-      }
-      setReservations((prev) => {
-        const exists = prev.some((r) => r.id === restored.id);
-        if (exists) {
-          return prev.map((r) => (r.id === restored.id ? restored : r));
-        }
-        return [...prev, restored];
-      });
-      if (form.editingId === reservationId) {
-        startEdit(restored);
-      }
-      if (deletedUndo?.id === reservationId) {
-        setDeletedUndo(null);
-      }
-      await refreshUndoable();
-      setMessage(t('manage.undoDone', { name: restored.guestName }));
-    } catch (err) {
-      if (err instanceof ReservationOverlapError) {
-        setError(overlapErrorMessage(err));
-        void reloadReservations();
-      } else {
-        setError(t('manage.errors.undoFailed'));
-      }
+    } finally {
+      setSavingEditId(null);
     }
   };
 
@@ -790,9 +853,11 @@ export default function RoomManagement() {
       if (form.editingId === reservation.id) {
         setForm(emptyForm());
         clearSelection();
+        setMobileFormExpanded(false);
+        setViewingReservation(null);
+        clearRoomManagementDraft();
       }
       setMessage(t('manage.deleted'));
-      await refreshUndoable();
     } catch {
       setError(t('manage.errors.saveFailed'));
     }
@@ -1206,13 +1271,24 @@ export default function RoomManagement() {
             <div className="booking-history">
               <div className="booking-history-header">
                 <h3 className="booking-history-title">{t('manage.historyTitle')}</h3>
-                <button
-                  type="button"
-                  className="btn-link booking-history-toggle"
-                  onClick={() => setHistoryOpen(false)}
-                >
-                  {t('manage.hideHistory')}
-                </button>
+                <div className="booking-history-header-actions">
+                  {canModify && bookingHistory.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      onClick={() => void clearBookingHistory()}
+                    >
+                      {t('manage.clearBookingHistory')}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-link booking-history-toggle"
+                    onClick={() => setHistoryOpen(false)}
+                  >
+                    {t('manage.hideHistory')}
+                  </button>
+                </div>
               </div>
               <p className="booking-history-hint">{t('manage.historyUpdateHint')}</p>
               {historyLoading ? (
@@ -1425,15 +1501,6 @@ export default function RoomManagement() {
                     {t('manage.cancelEdit')}
                   </button>
                 )}
-                {canModify && editingReservation && undoableIds.has(editingReservation.id) && (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => handleUndo(editingReservation.id)}
-                  >
-                    {t('manage.undo')}
-                  </button>
-                )}
               </div>
               {canModify && editingReservation && (
                 <button
@@ -1452,18 +1519,6 @@ export default function RoomManagement() {
         </div>
 
         <section className="room-manage-section">
-          {canModify && deletedUndo && (
-            <div className="undo-banner">
-              <span>{t('manage.deletedUndoBanner', { name: deletedUndo.guestName })}</span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => handleUndo(deletedUndo.id)}
-              >
-                {t('manage.undo')}
-              </button>
-            </div>
-          )}
           <h2>{t('manage.monthBookings')}</h2>
           {monthReservations.length === 0 ? (
             <p className="room-manage-info">{t('manage.noBookings')}</p>
@@ -1517,15 +1572,6 @@ export default function RoomManagement() {
                         >
                           {t('manage.edit')}
                         </button>
-                        {undoableIds.has(reservation.id) && (
-                          <button
-                            type="button"
-                            className="btn-link"
-                            onClick={() => handleUndo(reservation.id)}
-                          >
-                            {t('manage.undo')}
-                          </button>
-                        )}
                         <button
                           type="button"
                           className="btn-link btn-link-danger"

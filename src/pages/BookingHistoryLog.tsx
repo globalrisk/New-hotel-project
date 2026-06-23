@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import HistoryGuestSummary from '../components/HistoryGuestSummary';
 import HistoryRoomsSummary, { roomsSearchText } from '../components/HistoryRoomsSummary';
+import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
+  deleteReservationHistoryEntries,
   fetchAllReservationHistory,
   type HistoryAction,
   type ReservationHistoryEntry,
@@ -23,11 +25,15 @@ function isoToDateTime(iso: string): string {
 
 export default function BookingHistoryLog() {
   const { t } = useLanguage();
+  const { isAdmin } = useAuth();
   const [entries, setEntries] = useState<ReservationHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [actionFilter, setActionFilter] = useState<ActionFilter>('all');
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
 
   const actorLabel = (email: string) => email.trim() || t('manage.unknownUser');
 
@@ -39,10 +45,16 @@ export default function BookingHistoryLog() {
     try {
       const rows = await fetchAllReservationHistory();
       setEntries(rows);
+      setSelectedIds((prev) => {
+        const valid = new Set(rows.map((row) => row.id));
+        const next = new Set([...prev].filter((id) => valid.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
     } catch {
       if (!options?.silent) {
         setError(t('historyLog.errors.loadFailed'));
         setEntries([]);
+        setSelectedIds(new Set());
       }
     } finally {
       if (!options?.silent) setLoading(false);
@@ -69,7 +81,7 @@ export default function BookingHistoryLog() {
       .channel('booking-history-log')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reservation_history' },
+        { event: '*', schema: 'public', table: 'reservation_history' },
         scheduleReload,
       )
       .subscribe();
@@ -97,6 +109,51 @@ export default function BookingHistoryLog() {
       return haystack.includes(q);
     });
   }, [entries, actionFilter, search]);
+
+  const filteredIds = useMemo(() => filtered.map((entry) => entry.id), [filtered]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id));
+
+  const toggleEntry = (entryId: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(entryId);
+      else next.delete(entryId);
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = (checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of filteredIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (!window.confirm(t('historyLog.deleteSelectedConfirm', { count: ids.length }))) return;
+
+    setError('');
+    setMessage('');
+    setDeleting(true);
+    try {
+      const count = await deleteReservationHistoryEntries(ids);
+      setEntries((prev) => prev.filter((entry) => !selectedIds.has(entry.id)));
+      setSelectedIds(new Set());
+      setMessage(t('historyLog.deletedSelected', { count }));
+    } catch {
+      setError(t('historyLog.errors.deleteFailed'));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="history-log">
@@ -133,11 +190,23 @@ export default function BookingHistoryLog() {
               <button type="button" className="btn btn-secondary" onClick={() => void loadEntries()}>
                 {t('historyLog.refresh')}
               </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={deleting || selectedIds.size === 0}
+                  onClick={() => void handleDeleteSelected()}
+                >
+                  {t('historyLog.deleteSelected')}
+                  {selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+                </button>
+              )}
             </div>
           </div>
 
           <p className="history-log-hint">{t('manage.historyUpdateHint')}</p>
 
+          {message && <p className="history-log-success">{message}</p>}
           {loading && <p className="history-log-info">{t('historyLog.loading')}</p>}
           {error && <p className="history-log-error">{error}</p>}
           {!loading && !error && filtered.length === 0 && (
@@ -149,6 +218,21 @@ export default function BookingHistoryLog() {
               <table className="history-log-table">
                 <thead>
                   <tr>
+                    {isAdmin && (
+                      <th className="history-log-select-col">
+                        <label className="history-log-select-all">
+                          <input
+                            type="checkbox"
+                            checked={allFilteredSelected}
+                            ref={(input) => {
+                              if (input) input.indeterminate = someFilteredSelected && !allFilteredSelected;
+                            }}
+                            onChange={(e) => toggleAllFiltered(e.target.checked)}
+                            aria-label={t('historyLog.selectAllFiltered')}
+                          />
+                        </label>
+                      </th>
+                    )}
                     <th>{t('historyLog.colWhen')}</th>
                     <th>{t('historyLog.colAction')}</th>
                     <th>{t('historyLog.colGuest')}</th>
@@ -159,7 +243,20 @@ export default function BookingHistoryLog() {
                 </thead>
                 <tbody>
                   {filtered.map((entry) => (
-                    <tr key={entry.id}>
+                    <tr
+                      key={entry.id}
+                      className={selectedIds.has(entry.id) ? 'history-log-row-selected' : undefined}
+                    >
+                      {isAdmin && (
+                        <td className="history-log-select-col">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(entry.id)}
+                            onChange={(e) => toggleEntry(entry.id, e.target.checked)}
+                            aria-label={t('historyLog.colSelect')}
+                          />
+                        </td>
+                      )}
                       <td>
                         <time dateTime={entry.createdAt}>{isoToDateTime(entry.createdAt)}</time>
                       </td>
@@ -188,6 +285,9 @@ export default function BookingHistoryLog() {
           {!loading && !error && entries.length > 0 && (
             <p className="history-log-count">
               {t('historyLog.showing', { shown: filtered.length, total: entries.length })}
+              {isAdmin && selectedIds.size > 0 && (
+                <> · {t('historyLog.deleteSelected')} ({selectedIds.size})</>
+              )}
             </p>
           )}
         </section>

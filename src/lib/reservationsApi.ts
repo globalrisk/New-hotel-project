@@ -45,8 +45,6 @@ export type ReservationInput = Omit<
   'id' | 'createdByEmail' | 'updatedByEmail' | 'updatedAt'
 >;
 
-export type RevisionAction = 'update' | 'delete';
-
 export type HistoryAction = 'create' | 'update' | 'delete';
 
 export interface ReservationHistoryEntry {
@@ -58,14 +56,7 @@ export interface ReservationHistoryEntry {
   createdAt: string;
 }
 
-export interface ReservationRevision {
-  reservationId: string;
-  action: RevisionAction;
-  snapshot: ReservationInput;
-}
-
 const STORAGE_KEY = 'coto-queen-reservations-v2';
-const REVISIONS_KEY = 'coto-queen-reservation-revisions';
 const HISTORY_KEY = 'coto-queen-reservation-history';
 
 interface ReservationRow {
@@ -147,21 +138,6 @@ function reservationToInput(reservation: Reservation): ReservationInput {
     guestColor: reservation.guestColor,
     rooms: reservation.rooms.map((stay) => ({ ...stay })),
   };
-}
-
-function loadLocalRevisions(): Map<string, ReservationRevision> {
-  try {
-    const raw = localStorage.getItem(REVISIONS_KEY);
-    if (!raw) return new Map();
-    const entries = JSON.parse(raw) as Array<[string, ReservationRevision]>;
-    return new Map(entries);
-  } catch {
-    return new Map();
-  }
-}
-
-function saveLocalRevisions(revisions: Map<string, ReservationRevision>) {
-  localStorage.setItem(REVISIONS_KEY, JSON.stringify([...revisions.entries()]));
 }
 
 interface LocalHistoryRow {
@@ -292,6 +268,67 @@ export async function fetchAllReservationHistory(
   }));
 }
 
+export async function deleteReservationHistoryEntry(entryId: string): Promise<void> {
+  await deleteReservationHistoryEntries([entryId]);
+}
+
+export async function deleteReservationHistoryEntries(entryIds: string[]): Promise<number> {
+  if (entryIds.length === 0) return 0;
+
+  if (!supabase) {
+    const ids = new Set(entryIds);
+    const rows = loadLocalHistory();
+    const next = rows.filter((row) => !ids.has(row.id));
+    saveLocalHistory(next);
+    return rows.length - next.length;
+  }
+
+  const { data, error } = await supabase
+    .from('reservation_history')
+    .delete()
+    .in('id', entryIds)
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
+export async function deleteReservationHistoryForBooking(reservationId: string): Promise<number> {
+  if (!supabase) {
+    const rows = loadLocalHistory();
+    const next = rows.filter((row) => row.reservationId !== reservationId);
+    saveLocalHistory(next);
+    return rows.length - next.length;
+  }
+
+  const { data, error } = await supabase
+    .from('reservation_history')
+    .delete()
+    .eq('reservation_id', reservationId)
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
+/** Delete all history rows (admin only). Returns number of rows removed. */
+export async function deleteAllReservationHistory(): Promise<number> {
+  if (!supabase) {
+    const count = loadLocalHistory().length;
+    saveLocalHistory([]);
+    return count;
+  }
+
+  const { data, error } = await supabase
+    .from('reservation_history')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000')
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  return data?.length ?? 0;
+}
+
 async function getReservationById(id: string): Promise<Reservation | null> {
   if (!supabase) {
     return loadLocal().find((r) => r.id === id) ?? null;
@@ -305,131 +342,6 @@ async function getReservationById(id: string): Promise<Reservation | null> {
   return rowToReservation(data as ReservationRow);
 }
 
-async function pushRevision(
-  reservation: Reservation,
-  action: RevisionAction,
-): Promise<void> {
-  const revision: ReservationRevision = {
-    reservationId: reservation.id,
-    action,
-    snapshot: reservationToInput(reservation),
-  };
-
-  if (!supabase) {
-    const revisions = loadLocalRevisions();
-    revisions.set(reservation.id, revision);
-    saveLocalRevisions(revisions);
-    return;
-  }
-
-  await supabase.from('reservation_revisions').delete().eq('reservation_id', reservation.id);
-  const { error } = await supabase.from('reservation_revisions').insert({
-    reservation_id: reservation.id,
-    action,
-    snapshot: revision.snapshot,
-  });
-  if (error) throw new Error(error.message);
-}
-
-async function fetchRevision(reservationId: string): Promise<ReservationRevision | null> {
-  if (!supabase) {
-    return loadLocalRevisions().get(reservationId) ?? null;
-  }
-
-  const { data, error } = await supabase
-    .from('reservation_revisions')
-    .select('reservation_id, action, snapshot, created_at')
-    .eq('reservation_id', reservationId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !data) return null;
-  return {
-    reservationId: data.reservation_id,
-    action: data.action as RevisionAction,
-    snapshot: data.snapshot as ReservationInput,
-  };
-}
-
-async function clearRevision(reservationId: string): Promise<void> {
-  if (!supabase) {
-    const revisions = loadLocalRevisions();
-    revisions.delete(reservationId);
-    saveLocalRevisions(revisions);
-    return;
-  }
-
-  const { error } = await supabase
-    .from('reservation_revisions')
-    .delete()
-    .eq('reservation_id', reservationId);
-  if (error) throw new Error(error.message);
-}
-
-async function restoreDeletedReservation(
-  id: string,
-  input: ReservationInput,
-): Promise<Reservation> {
-  if (!supabase) {
-    await assertNoRoomOverlaps(input.rooms);
-    const reservation: Reservation = {
-      ...input,
-      id,
-      createdByEmail: '',
-      updatedByEmail: '',
-      updatedAt: new Date().toISOString(),
-    };
-    saveLocal([...loadLocal(), reservation]);
-    return reservation;
-  }
-
-  await assertNoRoomOverlaps(input.rooms);
-  const { error: insertError } = await supabase.from('reservations').insert({
-    id,
-    ...inputToRow(input),
-  });
-  if (insertError) throw new Error(insertError.message);
-
-  await saveRooms(id, input.rooms);
-  const restored = await getReservationById(id);
-  if (!restored) throw new Error('Failed to restore reservation');
-  return restored;
-}
-
-async function applyReservation(id: string, input: ReservationInput): Promise<Reservation> {
-  if (!supabase) {
-    await assertNoRoomOverlaps(input.rooms, id);
-    const existing = loadLocal().find((r) => r.id === id);
-    const updated: Reservation = {
-      ...input,
-      id,
-      createdByEmail: existing?.createdByEmail ?? '',
-      updatedByEmail: '',
-      updatedAt: new Date().toISOString(),
-    };
-    saveLocal(loadLocal().map((r) => (r.id === id ? updated : r)));
-    return updated;
-  }
-
-  const actor = await currentActor();
-  const { data, error } = await supabase
-    .from('reservations')
-    .update({
-      ...inputToRow(input),
-      updated_at: new Date().toISOString(),
-      updated_by: actor?.userId ?? null,
-      updated_by_email: actor?.email ?? '',
-    })
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  await assertNoRoomOverlaps(input.rooms, id);
-  await saveRooms(id, input.rooms);
-  return { ...rowToReservation(data as ReservationRow), rooms: input.rooms };
-}
-
 function assertEditNotStale(
   current: Reservation | null | undefined,
   expectedUpdatedAt: string | undefined,
@@ -438,44 +350,6 @@ function assertEditNotStale(
   if (current.updatedAt !== expectedUpdatedAt) {
     throw new ReservationEditConflictError(current.updatedByEmail);
   }
-}
-
-export async function fetchUndoableReservationIds(): Promise<string[]> {
-  if (!supabase) {
-    return [...loadLocalRevisions().keys()];
-  }
-
-  const { data, error } = await supabase
-    .from('reservation_revisions')
-    .select('reservation_id');
-  if (error) {
-    console.error('Supabase: failed to load revision ids', error);
-    return [];
-  }
-  return [...new Set((data ?? []).map((row) => row.reservation_id as string))];
-}
-
-export async function fetchRevisionForReservation(
-  reservationId: string,
-): Promise<ReservationRevision | null> {
-  return fetchRevision(reservationId);
-}
-
-export async function undoReservationChange(
-  reservationId: string,
-): Promise<Reservation | null> {
-  const revision = await fetchRevision(reservationId);
-  if (!revision) return null;
-
-  let restored: Reservation;
-  if (revision.action === 'delete') {
-    restored = await restoreDeletedReservation(reservationId, revision.snapshot);
-  } else {
-    restored = await applyReservation(reservationId, revision.snapshot);
-  }
-
-  await clearRevision(reservationId);
-  return restored;
 }
 
 export async function fetchReservations(): Promise<Reservation[]> {
@@ -598,7 +472,6 @@ export async function updateReservation(
   const current = await getReservationById(id);
   assertEditNotStale(current, options?.expectedUpdatedAt);
   if (current) {
-    await pushRevision(current, 'update');
     await appendHistory(id, 'update', reservationToInput(current));
   }
 
@@ -647,7 +520,6 @@ export async function updateReservation(
 export async function deleteReservation(id: string): Promise<void> {
   const current = await getReservationById(id);
   if (current) {
-    await pushRevision(current, 'delete');
     await appendHistory(id, 'delete', reservationToInput(current));
   }
 
