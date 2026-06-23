@@ -30,7 +30,9 @@ import {
   clearRoomManagementDraft,
   hasDraftWork,
   loadInitialMobileDraft,
+  readStoredMonthDate,
   saveRoomManagementDraft,
+  saveStoredMonthDate,
   type RoomManagementDraft,
 } from '../lib/roomManagementDraft';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
@@ -154,6 +156,14 @@ function monthDateFromDraft(iso: string): Date {
   return new Date(now.getFullYear(), now.getMonth(), 1);
 }
 
+function initialMonthDate(propertyId: PropertyId, draft: RoomManagementDraft | null): Date {
+  if (draft?.monthDate) return monthDateFromDraft(draft.monthDate);
+  const stored = readStoredMonthDate(propertyId);
+  if (stored) return monthDateFromDraft(stored);
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
 export default function RoomManagement() {
   const { t, roomName, getDayLong, getDayShort } = useLanguage();
   const { canModify } = useAuth();
@@ -178,14 +188,7 @@ export default function RoomManagement() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [monthDate, setMonthDate] = useState(() =>
-    initialMobileDraft
-      ? monthDateFromDraft(initialMobileDraft.monthDate)
-      : (() => {
-          const now = new Date();
-          return new Date(now.getFullYear(), now.getMonth(), 1);
-        })(),
-  );
+  const [monthDate, setMonthDate] = useState(() => initialMonthDate(activePropertyId, initialMobileDraft));
   const [form, setForm] = useState<ReservationForm>(
     () => initialMobileDraft?.form ?? emptyForm(),
   );
@@ -256,6 +259,10 @@ export default function RoomManagement() {
       historyOpen,
     };
   }, [form, selectedCells, mobileFormExpanded, viewingReservation, monthDate, historyOpen]);
+
+  useEffect(() => {
+    saveStoredMonthDate(activePropertyId, toIsoDateString(monthDate));
+  }, [activePropertyId, monthDate]);
 
   useEffect(() => {
     if (!isMobile) {
@@ -902,6 +909,7 @@ export default function RoomManagement() {
     setMobileFormExpanded(false);
     setHistoryOpen(false);
     setBookingHistory([]);
+    setMonthDate(initialMonthDate(nextPropertyId, null));
     clearStatus();
     scrollToTodayOnLoadRef.current = true;
     pendingScrollTodayRef.current = false;

@@ -31,6 +31,12 @@ function draftKey(propertyId: PropertyId): string {
   return `${DRAFT_KEY_PREFIX}-${propertyId}`;
 }
 
+const MONTH_KEY_PREFIX = 'room-management-month';
+
+function monthKey(propertyId: PropertyId): string {
+  return `${MONTH_KEY_PREFIX}-${propertyId}`;
+}
+
 function readStorage(): Storage | null {
   try {
     return localStorage;
@@ -89,6 +95,23 @@ export function clearRoomManagementDraft(propertyId: PropertyId): void {
     if (propertyId === 'coto-queen') {
       sessionStorage.removeItem(LEGACY_DRAFT_KEY);
     }
+  } catch {
+    // Ignore.
+  }
+}
+
+/** Persisted calendar month (yyyy-mm-dd, first of month) — survives app backgrounding. */
+export function readStoredMonthDate(propertyId: PropertyId): string | null {
+  try {
+    return readStorage()?.getItem(monthKey(propertyId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredMonthDate(propertyId: PropertyId, monthDate: string): void {
+  try {
+    readStorage()?.setItem(monthKey(propertyId), monthDate);
   } catch {
     // Ignore.
   }
