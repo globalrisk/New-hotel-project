@@ -11,7 +11,8 @@ export interface RoomManagementDraftForm {
   guestPhone: string;
   guests: string;
   notes: string;
-  guestColor: string;
+  /** @deprecated No longer persisted — ignored when restoring drafts. */
+  guestColor?: string;
 }
 
 export interface RoomManagementDraft {

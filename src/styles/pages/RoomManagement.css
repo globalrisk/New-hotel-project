@@ -477,24 +477,58 @@
 }
 
 .day-cell-free.day-past {
-  background: #e2e2e2;
+  background: #ececec;
+  color: #9a9a9a;
 }
 
 .day-cell-free.day-weekend.day-past {
-  background: #e8dfd0;
+  background: #ebe4d8;
+  color: #9a9488;
 }
 
 .day-cell-free.day-past:hover {
-  background: #d4d4d4;
+  background: #e0e0e0;
 }
 
 .day-cell-free.day-weekend.day-past:hover {
-  background: #ddd2c0;
+  background: #e0d9cc;
+}
+
+.day-cell-booked.day-past:not(.stay-past) {
+  background: #ececec;
+}
+
+.day-cell-booked.day-weekend.day-past:not(.stay-past) {
+  background: #ebe4d8;
+}
+
+.day-cell-booked.day-past:not(.stay-past) .cell-stay {
+  opacity: 0.62;
 }
 
 /* Fade the whole bar only when every night of the stay is in the past */
 .day-cell-booked.stay-past {
-  opacity: 0.5;
+  opacity: 0.45;
+}
+
+.day-cell-booked.stay-past .cell-stay {
+  opacity: 0.75;
+}
+
+.occupancy-grid th.day-past {
+  color: #9a9a9a;
+  background: #ececec;
+  font-weight: 500;
+}
+
+.occupancy-grid th.day-past.day-weekend {
+  background: #ebe4d8;
+  color: #9a9488;
+}
+
+.occupancy-grid th.day-past.day-today {
+  background: var(--primary-color);
+  color: white;
 }
 
 .room-manage-hint {

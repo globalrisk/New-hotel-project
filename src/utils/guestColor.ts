@@ -1,3 +1,6 @@
+import type { RoomStay } from '../lib/reservationsApi';
+import { rangesOverlap } from '../lib/reservationOverlap';
+
 /** Preset swatches — visually distinct on the calendar. */
 export const GUEST_COLOR_PALETTE = [
   '#c98a3d',
@@ -24,23 +27,72 @@ function normalizeColor(color: string): string {
   return color.trim().toLowerCase();
 }
 
-/** Hash a seed into a unique HSL color (fallback when the palette is full). */
-export function colorFromSeed(seed: string): string {
+function hashString(seed: string): number {
   let h = 5381;
   for (let i = 0; i < seed.length; i++) {
     h = ((h << 5) + h) ^ seed.charCodeAt(i);
   }
-  const hue = Math.abs(h) % 360;
-  const sat = 55 + (Math.abs(h >> 8) % 15);
-  const light = 38 + (Math.abs(h >> 16) % 10);
+  return Math.abs(h);
+}
+
+/** Hash a seed into a unique HSL color (fallback when the palette is full). */
+export function colorFromSeed(seed: string): string {
+  const h = hashString(seed);
+  const hue = h % 360;
+  const sat = 55 + ((h >> 8) % 15);
+  const light = 38 + ((h >> 16) % 10);
   return `hsl(${hue}, ${sat}%, ${light}%)`;
 }
 
-/** Pick the first unused palette color; falls back to a unique hash color. */
-export function suggestGuestColor(usedColors: Iterable<string>, seed: string): string {
-  const used = new Set([...usedColors].map(normalizeColor));
-  const available = GUEST_COLOR_PALETTE.find((c) => !used.has(normalizeColor(c)));
-  return available ?? colorFromSeed(seed);
+/** Same room with overlapping nights — colors should not clash here. */
+export function reservationConflictsWithStays(
+  rooms: RoomStay[],
+  targetStays: RoomStay[],
+): boolean {
+  return targetStays.some((stay) =>
+    rooms.some(
+      (other) =>
+        other.roomUnitId === stay.roomUnitId &&
+        rangesOverlap(other.checkIn, other.checkOut, stay.checkIn, stay.checkOut),
+    ),
+  );
+}
+
+export function buildGuestColorSeed(guestName: string, stays: RoomStay[]): string {
+  const parts = [guestName.trim()];
+  for (const stay of [...stays].sort((a, b) =>
+    `${a.roomUnitId}|${a.checkIn}`.localeCompare(`${b.roomUnitId}|${b.checkIn}`),
+  )) {
+    parts.push(`${stay.roomUnitId}|${stay.checkIn}|${stay.checkOut}`);
+  }
+  return parts.join('::');
+}
+
+export function blockedGuestColors(
+  reservations: Array<{ id: string; guestColor: string; rooms: RoomStay[] }>,
+  targetStays: RoomStay[],
+  excludeId: string | null,
+): string[] {
+  return reservations
+    .filter((r) => r.id !== excludeId)
+    .filter((r) => reservationConflictsWithStays(r.rooms, targetStays))
+    .map((r) => (r.guestColor.trim() ? r.guestColor : resolveReservationColor('', r.id)));
+}
+
+/**
+ * Auto-assign a calendar color: rotate through the palette from a unique seed,
+ * skip colors used by overlapping same-room bookings, then fall back to HSL.
+ */
+export function assignGuestColor(blockedColors: Iterable<string>, seed: string): string {
+  const blocked = new Set([...blockedColors].map(normalizeColor));
+  const start = hashString(seed) % GUEST_COLOR_PALETTE.length;
+
+  for (let i = 0; i < GUEST_COLOR_PALETTE.length; i++) {
+    const color = GUEST_COLOR_PALETTE[(start + i) % GUEST_COLOR_PALETTE.length];
+    if (!blocked.has(normalizeColor(color))) return color;
+  }
+
+  return colorFromSeed(seed);
 }
 
 /** Choose dark or white label text so guest names stay readable on any bar color. */

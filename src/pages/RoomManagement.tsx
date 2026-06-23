@@ -28,10 +28,12 @@ import {
 } from '../lib/roomManagementDraft';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
+  assignGuestColor,
+  blockedGuestColors,
+  buildGuestColorSeed,
   GUEST_COLOR_PALETTE,
   readableTextColor,
   resolveReservationColor,
-  suggestGuestColor,
 } from '../utils/guestColor';
 import { dayOfWeekFromIso, formatDdMmYyyy, toIsoDateString, todayIso } from '../utils/date';
 import { useMediaQuery } from '../utils/useMediaQuery';
@@ -47,7 +49,6 @@ interface ReservationForm {
   guestPhone: string;
   guests: string;
   notes: string;
-  guestColor: string;
 }
 
 interface DragState {
@@ -70,7 +71,6 @@ function emptyForm(): ReservationForm {
     guestPhone: '',
     guests: '1',
     notes: '',
-    guestColor: '',
   };
 }
 
@@ -190,6 +190,7 @@ export default function RoomManagement() {
   const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const pendingScrollTodayRef = useRef(false);
+  const scrollToTodayOnLoadRef = useRef(true);
   const hoverClearRef = useRef<number | null>(null);
   const skipDraftPersistRef = useRef(Boolean(initialMobileDraft));
   const draftSnapshotRef = useRef({
@@ -294,7 +295,7 @@ export default function RoomManagement() {
     }, 0);
   };
 
-  const scrollToTodayColumn = useCallback(() => {
+  const scrollToTodayColumn = useCallback((options?: { animate?: boolean }) => {
     const wrap = gridWrapRef.current;
     if (!wrap) return;
     const todayCol = wrap.querySelector('[data-today-col="true"]') as HTMLElement | null;
@@ -306,15 +307,20 @@ export default function RoomManagement() {
     const wrapRect = wrap.getBoundingClientRect();
     const colRect = todayCol.getBoundingClientRect();
     const colCenter = colRect.left + colRect.width / 2;
-    // Center today in the day columns area (to the right of sticky room names).
     const daysAreaCenter =
       wrapRect.left + stickyWidth + (wrapRect.width - stickyWidth) / 2;
 
-    wrap.scrollBy({ left: colCenter - daysAreaCenter, behavior: 'smooth' });
-    wrap.querySelectorAll('[data-today-col="true"]').forEach((el) => {
-      el.classList.add('day-today-flash');
-      window.setTimeout(() => el.classList.remove('day-today-flash'), 700);
+    wrap.scrollBy({
+      left: colCenter - daysAreaCenter,
+      behavior: options?.animate === false ? 'auto' : 'smooth',
     });
+
+    if (options?.animate !== false) {
+      wrap.querySelectorAll('[data-today-col="true"]').forEach((el) => {
+        el.classList.add('day-today-flash');
+        window.setTimeout(() => el.classList.remove('day-today-flash'), 700);
+      });
+    }
   }, []);
 
   const reloadReservations = useCallback(async () => {
@@ -541,33 +547,10 @@ export default function RoomManagement() {
       )
       .join(', ');
 
-  const usedColors = useMemo(
-    () =>
-      reservations
-        .filter((r) => r.id !== form.editingId)
-        .map((r) => r.guestColor || resolveReservationColor('', r.id)),
-    [reservations, form.editingId],
-  );
-
-  const suggestedColor = useMemo(
-    () => suggestGuestColor(usedColors, form.editingId ?? 'new'),
-    [usedColors, form.editingId],
-  );
-
-  const activeColor = form.guestColor || suggestedColor;
-
   const editingReservation = useMemo(
     () => reservations.find((r) => r.id === form.editingId) ?? null,
     [reservations, form.editingId],
   );
-
-  const availableSwatches = useMemo(() => {
-    const used = new Set(usedColors.map((c) => c.trim().toLowerCase()));
-    const active = activeColor.trim().toLowerCase();
-    return GUEST_COLOR_PALETTE.filter(
-      (color) => !used.has(color.toLowerCase()) || color.toLowerCase() === active,
-    );
-  }, [usedColors, activeColor]);
 
   const reservationColor = (reservation: Reservation): string =>
     resolveReservationColor(reservation.guestColor, reservation.id);
@@ -691,7 +674,6 @@ export default function RoomManagement() {
       guestPhone: reservation.guestPhone,
       guests: String(reservation.guests),
       notes: reservation.notes,
-      guestColor: reservation.guestColor || resolveReservationColor('', reservation.id),
     });
     clearStatus();
   };
@@ -712,7 +694,6 @@ export default function RoomManagement() {
       guestPhone: reservation.guestPhone,
       guests: String(reservation.guests),
       notes: reservation.notes,
-      guestColor: reservation.guestColor || resolveReservationColor('', reservation.id),
     });
     clearSelection();
     clearStatus();
@@ -797,13 +778,24 @@ export default function RoomManagement() {
       return;
     }
 
+    const editingReservationForSave = form.editingId
+      ? reservations.find((r) => r.id === form.editingId)
+      : null;
+    const blocked = blockedGuestColors(reservations, selection, form.editingId);
+    const guestColor = editingReservationForSave?.guestColor?.trim()
+      ? editingReservationForSave.guestColor
+      : assignGuestColor(
+          blocked,
+          form.editingId ?? buildGuestColorSeed(form.guestName.trim(), selection),
+        );
+
     const input: ReservationInput = {
       rooms: selection,
       guestName: form.guestName.trim(),
       guestPhone: form.guestPhone.trim(),
       guests,
       notes: form.notes.trim(),
-      guestColor: activeColor,
+      guestColor,
     };
 
     const editingId = form.editingId;
@@ -888,6 +880,25 @@ export default function RoomManagement() {
       requestAnimationFrame(() => scrollToTodayColumn());
     });
   }, [year, month, loading, scrollToTodayColumn]);
+
+  useEffect(() => {
+    if (loading || !scrollToTodayOnLoadRef.current) return;
+
+    const now = new Date();
+    const onTodayMonth =
+      monthDate.getFullYear() === now.getFullYear() &&
+      monthDate.getMonth() === now.getMonth();
+
+    if (!onTodayMonth) {
+      scrollToTodayOnLoadRef.current = false;
+      return;
+    }
+
+    scrollToTodayOnLoadRef.current = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => scrollToTodayColumn({ animate: false }));
+    });
+  }, [loading, monthDate, scrollToTodayColumn]);
 
   return (
     <div className="room-manage">
@@ -981,6 +992,7 @@ export default function RoomManagement() {
                         'day-col',
                         isWeekend ? 'day-weekend' : '',
                         iso === today ? 'day-today' : '',
+                        iso < today ? 'day-past' : '',
                       ]
                         .filter(Boolean)
                         .join(' ');
@@ -1058,7 +1070,9 @@ export default function RoomManagement() {
                                 isBookedCell
                                   ? stayFullyPast
                                     ? 'stay-past'
-                                    : ''
+                                    : iso < today
+                                      ? 'day-past'
+                                      : ''
                                   : iso < today
                                     ? 'day-past'
                                     : '',
@@ -1432,39 +1446,6 @@ export default function RoomManagement() {
               </label>
             </div>
 
-            {!formReadOnly && (
-            <div className="color-picker">
-              <span className="color-picker-label">{t('manage.formColor')}</span>
-              <div className="color-swatches">
-                {availableSwatches.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={
-                      activeColor.toLowerCase() === color.toLowerCase()
-                        ? 'color-swatch color-swatch-active'
-                        : 'color-swatch'
-                    }
-                    style={{ backgroundColor: color }}
-                    title={color}
-                    onClick={() => updateForm({ guestColor: color })}
-                  />
-                ))}
-              </div>
-              <label className="color-custom">
-                <input
-                  type="color"
-                  value={
-                    activeColor.startsWith('#') && activeColor.length >= 7
-                      ? activeColor.slice(0, 7)
-                      : '#c98a3d'
-                  }
-                  onChange={(e) => updateForm({ guestColor: e.target.value })}
-                />
-                <span>{t('manage.formColorCustom')}</span>
-              </label>
-            </div>
-            )}
             </fieldset>
 
             {editStale && form.editingId && (
