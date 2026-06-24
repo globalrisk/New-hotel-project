@@ -640,16 +640,10 @@ export default function RoomManagement() {
     const unit = propertyUnits[row];
     const iso = monthDays[col];
     if (!unit || !iso) return;
-    const key = cellKey(unit.id, iso);
 
-    // Leaving view/edit mode when picking empty cells for a new booking
+    // Leaving view mode when picking empty cells for a new booking
     if (viewingReservation) {
       setViewingReservation(null);
-      setForm(emptyForm());
-      setSelectedCells(new Set());
-      setMobileFormExpanded(false);
-      clearStatus();
-    } else if (form.editingId && !selectedCells.has(key)) {
       setForm(emptyForm());
       setSelectedCells(new Set());
       setMobileFormExpanded(false);
