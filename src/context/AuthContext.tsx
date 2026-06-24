@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -46,17 +47,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [roleLoading, setRoleLoading] = useState(false);
+  const loadedRoleRef = useRef<{ userId: string; role: AppRole | null } | null>(null);
+  const loadRoleInFlightRef = useRef<Promise<void> | null>(null);
 
   const loadRole = useCallback(async (userId: string | undefined) => {
     if (!userId) {
+      loadedRoleRef.current = null;
+      loadRoleInFlightRef.current = null;
       setRole(null);
       setRoleLoading(false);
       return;
     }
-    setRoleLoading(true);
-    const nextRole = await fetchUserRole(userId);
-    setRole(nextRole);
-    setRoleLoading(false);
+
+    if (loadedRoleRef.current?.userId === userId) return;
+
+    if (loadRoleInFlightRef.current) {
+      await loadRoleInFlightRef.current;
+      if (loadedRoleRef.current?.userId === userId) return;
+    }
+
+    const task = (async () => {
+      setRoleLoading(true);
+      try {
+        const nextRole = await fetchUserRole(userId);
+        loadedRoleRef.current = { userId, role: nextRole };
+        setRole(nextRole);
+      } finally {
+        setRoleLoading(false);
+        loadRoleInFlightRef.current = null;
+      }
+    })();
+
+    loadRoleInFlightRef.current = task;
+    await task;
   }, []);
 
   useEffect(() => {
@@ -77,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       setLoading(false);
-      // JWT refresh on mobile resume — role unchanged, skip re-fetch/unmount churn.
+      // Session refresh / tab focus — JWT updates but role does not change.
       if (event === 'TOKEN_REFRESHED') return;
       void loadRole(nextSession?.user.id);
     });
@@ -99,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
+    loadedRoleRef.current = null;
+    loadRoleInFlightRef.current = null;
     setRole(null);
   }, []);
 
