@@ -74,9 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void loadRole(data.session?.user.id);
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       setLoading(false);
+      // JWT refresh on mobile resume — role unchanged, skip re-fetch/unmount churn.
+      if (event === 'TOKEN_REFRESHED') return;
       void loadRole(nextSession?.user.id);
     });
 

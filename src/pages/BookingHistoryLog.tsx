@@ -17,7 +17,6 @@ import {
   type HistoryAction,
   type ReservationHistoryEntry,
 } from '../lib/reservationsApi';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { formatDdMmYyyy } from '../utils/date';
 import '../styles/components/PropertySwitcher.css';
 import '../styles/pages/BookingHistoryLog.css';
@@ -92,33 +91,6 @@ export default function BookingHistoryLog() {
 
   useEffect(() => {
     void loadEntries();
-  }, [loadEntries]);
-
-  useEffect(() => {
-    const client = supabase;
-    if (!isSupabaseConfigured || !client) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        void loadEntries({ silent: true });
-      }, 250);
-    };
-
-    const channel = client
-      .channel('booking-history-log')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'reservation_history' },
-        scheduleReload,
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      void client.removeChannel(channel);
-    };
   }, [loadEntries]);
 
   const filtered = useMemo(() => {

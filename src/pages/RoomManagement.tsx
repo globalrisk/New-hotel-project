@@ -35,7 +35,6 @@ import {
   saveStoredMonthDate,
   type RoomManagementDraft,
 } from '../lib/roomManagementDraft';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
   assignGuestColor,
   blockedGuestColors,
@@ -424,46 +423,6 @@ export default function RoomManagement() {
       setError(t('manage.historyDeleteFailed'));
     }
   };
-
-  useEffect(() => {
-    const client = supabase;
-    if (!isSupabaseConfigured || !client) return;
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        void reloadReservations();
-        if (historyOpen && activeHistoryId) {
-          void loadBookingHistory(activeHistoryId);
-        }
-      }, 250);
-    };
-
-    const channel = client
-      .channel('room-management-reservations')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'reservation_rooms' },
-        scheduleReload,
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'reservations' },
-        scheduleReload,
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reservation_history' },
-        scheduleReload,
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      void client.removeChannel(channel);
-    };
-  }, [reloadReservations, loadBookingHistory, historyOpen, activeHistoryId]);
 
   const year = monthDate.getFullYear();
   const month = monthDate.getMonth();

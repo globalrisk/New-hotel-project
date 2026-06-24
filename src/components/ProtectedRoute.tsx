@@ -12,7 +12,7 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   requiredRole?: RequiredRole;
 }) {
-  const { session, loading, roleLoading, isAdmin, canAccessAdmin } = useAuth();
+  const { session, role, loading, roleLoading, isAdmin, canAccessAdmin } = useAuth();
   const { t } = useLanguage();
   const location = useLocation();
 
@@ -24,7 +24,7 @@ export default function ProtectedRoute({
     );
   }
 
-  if (loading || roleLoading) {
+  if (loading || (roleLoading && !role)) {
     return null;
   }
 
