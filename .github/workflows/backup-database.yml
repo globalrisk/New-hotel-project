@@ -19,7 +19,8 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          pg_dump --version
+          pg_dump17 --version
+          pg_dump17 --version | grep -q 'pg_dump (PostgreSQL) 17'
 
       - name: Set backup date
         id: date
@@ -31,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           DATE="$(date +%Y%m%d)"
-          pg_dump "$SUPABASE_DB_URL" \
+          pg_dump17 "$SUPABASE_DB_URL" \
             --schema=public \
             --no-owner --no-acl \
             --format=plain \
@@ -43,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           DATE="$(date +%Y%m%d)"
-          pg_dump "$SUPABASE_DB_URL" \
+          pg_dump17 "$SUPABASE_DB_URL" \
             --schema=auth \
             --table=auth.users \
             --data-only --no-owner --no-acl \
