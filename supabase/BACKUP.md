@@ -63,7 +63,7 @@ Run manually before risky schema changes or bulk data edits.
 
 ## Local backup (optional)
 
-Requires [PostgreSQL client tools](https://www.postgresql.org/download/) (`pg_dump` on your PATH).
+Requires [PostgreSQL 17 client tools](https://www.postgresql.org/download/) (`pg_dump` on your PATH). Supabase runs Postgres 17 — older `pg_dump` versions fail with a version mismatch error.
 
 ```bash
 # PowerShell
