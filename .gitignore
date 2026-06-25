@@ -29,6 +29,7 @@ dist-ssr
 *.sln
 *.sw?
 
-# Excel lock files (created while a workbook is open)
+# Local database dumps (guest PII — never commit)
+backups/
 ~$*
 **/~$*

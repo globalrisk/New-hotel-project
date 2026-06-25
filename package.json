@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "import:bungalow": "node scripts/import-bungalow.mjs"
+    "import:bungalow": "node scripts/import-bungalow.mjs",
+    "backup:db": "node scripts/backup-db.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

@@ -1,0 +1,58 @@
+name: Backup database
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Set backup date
+        id: date
+        run: echo "date=$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Dump public schema
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          DATE="$(date +%Y%m%d)"
+          pg_dump "$SUPABASE_DB_URL" \
+            --schema=public \
+            --no-owner --no-acl \
+            --format=plain \
+            -f "backup-public-${DATE}.sql"
+
+      - name: Dump auth.users
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          DATE="$(date +%Y%m%d)"
+          pg_dump "$SUPABASE_DB_URL" \
+            --schema=auth \
+            --table=auth.users \
+            --data-only --no-owner --no-acl \
+            --format=plain \
+            -f "backup-auth-users-${DATE}.sql"
+
+      - name: Compress backups
+        run: |
+          set -euo pipefail
+          DATE="$(date +%Y%m%d)"
+          gzip -9 "backup-public-${DATE}.sql"
+          gzip -9 "backup-auth-users-${DATE}.sql"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-backup-${{ steps.date.outputs.date }}
+          path: |
+            backup-public-*.sql.gz
+            backup-auth-users-*.sql.gz
+          retention-days: 90
