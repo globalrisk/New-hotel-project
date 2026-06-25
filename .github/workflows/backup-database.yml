@@ -60,7 +60,7 @@ jobs:
           gzip -9 "backup-auth-users-${DATE}.sql"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: supabase-backup-${{ steps.date.outputs.date }}
           path: |
