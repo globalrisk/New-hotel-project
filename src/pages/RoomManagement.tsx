@@ -35,6 +35,7 @@ import {
   saveStoredMonthDate,
   type RoomManagementDraft,
 } from '../lib/roomManagementDraft';
+import { exportBookingsToExcel } from '../lib/exportBookingsExcel';
 import {
   assignGuestColor,
   blockedGuestColors,
@@ -186,6 +187,7 @@ export default function RoomManagement() {
 
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [monthDate, setMonthDate] = useState(() => initialMonthDate(activePropertyId, initialMobileDraft));
   const [form, setForm] = useState<ReservationForm>(
@@ -552,6 +554,33 @@ export default function RoomManagement() {
   const clearStatus = () => {
     setMessage('');
     setError('');
+  };
+
+  const handleExportExcel = () => {
+    clearStatus();
+    setExporting(true);
+    try {
+      exportBookingsToExcel(reservations, {
+        headers: [
+          t('manage.exportColumns.guest'),
+          t('manage.exportColumns.phone'),
+          t('manage.exportColumns.room'),
+          t('manage.exportColumns.roomsInBooking'),
+          t('manage.exportColumns.checkIn'),
+          t('manage.exportColumns.checkOut'),
+          t('manage.exportColumns.nights'),
+          t('manage.exportColumns.guests'),
+          t('manage.exportColumns.notes'),
+        ],
+        formatRoomOfTotal: (index, total) =>
+          t('manage.exportColumns.roomOfTotal', { index, total }),
+      });
+      setMessage(t('manage.exportDone'));
+    } catch {
+      setError(t('manage.exportFailed'));
+    } finally {
+      setExporting(false);
+    }
   };
 
   const updateForm = (patch: Partial<ReservationForm>) => {
@@ -930,19 +959,29 @@ export default function RoomManagement() {
           className={`room-manage-section room-manage-grid-col${showMobileSelectionBar ? ' has-mobile-bar' : ''}`}
         >
           <div className="room-manage-toolbar">
-            <div className="property-switcher" role="tablist" aria-label={t('manage.propertySwitch')}>
-              {PROPERTIES.map((property) => (
-                <button
-                  key={property.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={activePropertyId === property.id}
-                  className={`property-switcher-btn${activePropertyId === property.id ? ' is-active' : ''}`}
-                  onClick={() => switchProperty(property.id)}
-                >
-                  {propertyLabel(property.id)}
-                </button>
-              ))}
+            <div className="room-manage-toolbar-top">
+              <div className="property-switcher" role="tablist" aria-label={t('manage.propertySwitch')}>
+                {PROPERTIES.map((property) => (
+                  <button
+                    key={property.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={activePropertyId === property.id}
+                    className={`property-switcher-btn${activePropertyId === property.id ? ' is-active' : ''}`}
+                    onClick={() => switchProperty(property.id)}
+                  >
+                    {propertyLabel(property.id)}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="btn-export-excel"
+                onClick={handleExportExcel}
+                disabled={loading || exporting}
+              >
+                {exporting ? t('manage.exporting') : t('manage.exportExcel')}
+              </button>
             </div>
             <div className="calendar-nav">
               <div className="month-nav">

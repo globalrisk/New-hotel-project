@@ -89,6 +89,19 @@
   margin-bottom: 1.25rem;
 }
 
+.room-manage-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.room-manage-toolbar-top .btn-export-excel {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .month-nav {
   display: flex;
   align-items: center;
@@ -150,6 +163,29 @@
 .btn-today:hover {
   background: var(--primary-color);
   color: white;
+}
+
+.btn-export-excel {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 999px;
+  background: white;
+  color: var(--primary-color);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.btn-export-excel:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+}
+
+.btn-export-excel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .occupancy-today-btn {
@@ -981,6 +1017,10 @@
     flex-direction: column;
     align-items: stretch;
     gap: 0.65rem;
+  }
+
+  .room-manage-toolbar-top {
+    flex-wrap: wrap;
   }
 
   .month-nav {
