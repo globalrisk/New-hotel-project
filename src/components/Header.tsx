@@ -10,15 +10,15 @@ function navClassName({ isActive }: { isActive: boolean }) {
 }
 
 const PUBLIC_NAV = [
-  { to: '/', key: 'nav.home', end: true },
   { to: '/rooms', key: 'nav.rooms' },
   { to: '/calculate-rooms-price', key: 'nav.calculate' },
 ] as const;
 
 const ADMIN_NAV = [
-  { to: '/admin/room-prices', key: 'nav.managePrices', adminOnly: true },
-  { to: '/admin/rooms', key: 'nav.manageRooms' },
-  { to: '/admin/booking-history', key: 'nav.bookingHistory' },
+  { to: '/', key: 'nav.dashboard', end: true },
+  { to: '/admin/room-prices', key: 'nav.managePrices', adminOnly: true, end: true },
+  { to: '/admin/rooms', key: 'nav.manageRooms', end: true },
+  { to: '/admin/booking-history', key: 'nav.bookingHistory', end: true },
 ] as const;
 
 export default function Header() {
@@ -32,7 +32,7 @@ export default function Header() {
   const handleSignOut = async () => {
     await signOut();
     closeMenu();
-    navigate('/');
+    navigate('/login');
   };
 
   return (
@@ -51,20 +51,8 @@ export default function Header() {
           {menuOpen ? '✕' : '☰'}
         </button>
         <nav className={menuOpen ? 'nav nav-open' : 'nav'}>
-          {PUBLIC_NAV.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={'end' in item ? item.end : undefined}
-              className={navClassName}
-              onClick={closeMenu}
-            >
-              {t(item.key)}
-            </NavLink>
-          ))}
-          {session &&
-            canAccessAdmin &&
-            ADMIN_NAV.filter((item) => isAdmin || !('adminOnly' in item && item.adminOnly)).map((item) => (
+          {!(session && canAccessAdmin) &&
+            PUBLIC_NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
@@ -74,6 +62,21 @@ export default function Header() {
                 {t(item.key)}
               </NavLink>
             ))}
+          {session &&
+            canAccessAdmin &&
+            ADMIN_NAV.filter((item) => isAdmin || !('adminOnly' in item && item.adminOnly)).map(
+              (item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={'end' in item ? item.end : undefined}
+                  className={navClassName}
+                  onClick={closeMenu}
+                >
+                  {t(item.key)}
+                </NavLink>
+              ),
+            )}
           {session ? (
             <button type="button" className="nav-link nav-auth-btn" onClick={handleSignOut}>
               {t('nav.logout')}

@@ -9,7 +9,7 @@ export default function Login() {
   const { t } = useLanguage();
   const { session, loading, signIn } = useAuth();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? '/admin/rooms';
+  const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

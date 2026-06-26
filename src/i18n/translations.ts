@@ -6,6 +6,7 @@ export interface TranslationTree {
 
 const vi: TranslationTree = {
   nav: {
+    dashboard: 'Bảng điều khiển',
     home: 'Trang chủ',
     rooms: 'Phòng',
     calculate: 'Tính giá phòng',
@@ -68,6 +69,28 @@ const vi: TranslationTree = {
     thu: 'Thứ 5',
     fri: 'Thứ 6',
     sat: 'Thứ 7',
+  },
+  dashboard: {
+    title: 'Bảng điều khiển vận hành',
+    subtitle: 'Check-in, check-out và công suất phòng hôm nay',
+    todayLabel: 'Hôm nay: {{date}}',
+    checkInsToday: 'Nhận phòng hôm nay',
+    checkOutsToday: 'Trả phòng hôm nay',
+    inHouseTonight: 'Đang lưu trú tối nay',
+    occupancy: 'Công suất',
+    roomsCount: 'phòng',
+    ofUnits: 'trên {{count}} phòng',
+    occupiedUnits: '{{occupied}} / {{total}} phòng có khách',
+    arrivingToday: 'Khách đến hôm nay',
+    departingToday: 'Khách đi hôm nay',
+    emptyList: 'Không có phòng nào.',
+    colGuest: 'Khách',
+    colPhone: 'Điện thoại',
+    colRoom: 'Phòng',
+    colNights: 'Số đêm',
+    errors: {
+      loadFailed: 'Không tải được dữ liệu đặt phòng.',
+    },
   },
   home: {
     heroTitle: 'Chào mừng đến Coto Queen',
@@ -350,6 +373,7 @@ const vi: TranslationTree = {
 
 const en: TranslationTree = {
   nav: {
+    dashboard: 'Dashboard',
     home: 'Home',
     rooms: 'Rooms',
     calculate: 'Calculate Price',
@@ -412,6 +436,28 @@ const en: TranslationTree = {
     thu: 'Thursday',
     fri: 'Friday',
     sat: 'Saturday',
+  },
+  dashboard: {
+    title: 'Operations dashboard',
+    subtitle: "Today's check-ins, check-outs, and occupancy",
+    todayLabel: 'Today: {{date}}',
+    checkInsToday: 'Check-ins today',
+    checkOutsToday: 'Check-outs today',
+    inHouseTonight: 'In-house tonight',
+    occupancy: 'Occupancy',
+    roomsCount: 'rooms',
+    ofUnits: 'of {{count}} rooms',
+    occupiedUnits: '{{occupied}} / {{total}} rooms occupied',
+    arrivingToday: 'Arriving today',
+    departingToday: 'Departing today',
+    emptyList: 'No rooms.',
+    colGuest: 'Guest',
+    colPhone: 'Phone',
+    colRoom: 'Room',
+    colNights: 'Nights',
+    errors: {
+      loadFailed: 'Could not load booking data.',
+    },
   },
   home: {
     heroTitle: 'Welcome to Coto Queen',

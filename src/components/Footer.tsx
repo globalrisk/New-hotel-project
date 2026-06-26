@@ -18,15 +18,6 @@ export default function Footer() {
             <h3>{t('footer.quickLinks')}</h3>
             <ul>
               <li>
-                <Link to="/">{t('nav.home')}</Link>
-              </li>
-              <li>
-                <Link to="/rooms">{t('nav.rooms')}</Link>
-              </li>
-              <li>
-                <Link to="/calculate-rooms-price">{t('nav.calculate')}</Link>
-              </li>
-              <li>
                 <Link to="/login">{t('nav.login')}</Link>
               </li>
             </ul>
