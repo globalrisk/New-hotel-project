@@ -471,9 +471,6 @@ export async function updateReservation(
 ): Promise<Reservation> {
   const current = await getReservationById(id);
   assertEditNotStale(current, options?.expectedUpdatedAt);
-  if (current) {
-    await appendHistory(id, 'update', reservationToInput(current));
-  }
 
   if (!supabase) {
     await assertNoRoomOverlaps(input.rooms, id);
@@ -485,6 +482,7 @@ export async function updateReservation(
       updatedAt: new Date().toISOString(),
     };
     saveLocal(loadLocal().map((r) => (r.id === id ? updated : r)));
+    await appendHistory(id, 'update', input);
     return updated;
   }
 
@@ -514,6 +512,7 @@ export async function updateReservation(
   }
   await assertNoRoomOverlaps(input.rooms, id);
   await saveRooms(id, input.rooms);
+  await appendHistory(id, 'update', input);
   return { ...rowToReservation(data as ReservationRow), rooms: input.rooms };
 }
 

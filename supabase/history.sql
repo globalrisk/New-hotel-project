@@ -4,7 +4,7 @@
 --
 -- Snapshot semantics:
 --   create  → state after creation
---   update  → state before the change (what was replaced)
+--   update  → state after the change (what was saved)
 --   delete  → state before deletion
 
 create table if not exists public.reservation_history (

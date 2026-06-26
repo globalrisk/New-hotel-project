@@ -281,7 +281,7 @@ const vi: TranslationTree = {
     hideHistory: 'Ẩn lịch sử',
     historyLoading: 'Đang tải lịch sử…',
     historyEmpty: 'Chưa có lịch sử — sẽ ghi lại từ lần lưu tiếp theo.',
-    historyUpdateHint: 'Mỗi mục cập nhật lưu phiên bản trước khi thay đổi.',
+    historyUpdateHint: 'Mỗi mục cập nhật lưu phiên bản đã lưu sau thay đổi.',
     clearBookingHistory: 'Xóa lịch sử đặt phòng này',
     clearBookingHistoryConfirm:
       'Xóa toàn bộ lịch sử sửa cho đặt phòng này? Không thể hoàn tác.',
@@ -626,7 +626,7 @@ const en: TranslationTree = {
     hideHistory: 'Hide history',
     historyLoading: 'Loading history…',
     historyEmpty: 'No history yet — changes will be recorded from the next save.',
-    historyUpdateHint: 'Each update entry shows the version before that change.',
+    historyUpdateHint: 'Each update entry shows the saved version after that change.',
     clearBookingHistory: 'Clear this booking’s history',
     clearBookingHistoryConfirm:
       'Delete all edit history for this booking? This cannot be undone.',
