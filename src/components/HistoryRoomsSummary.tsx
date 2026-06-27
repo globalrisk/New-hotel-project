@@ -1,5 +1,5 @@
 import { useLanguage } from '../context/LanguageContext';
-import { unitLabelById } from '../data/properties';
+import { unitLabelById, unitRoomTypeLabelKey } from '../data/properties';
 import type { RoomStay } from '../lib/reservationsApi';
 import { formatDdMmYyyy } from '../utils/date';
 import './HistoryRoomsSummary.css';
@@ -43,10 +43,18 @@ export function roomsSearchText(rooms: RoomStay[]): string {
 
 interface HistoryRoomsSummaryProps {
   rooms: RoomStay[];
+  /** When true, append Single/Double labels for properties that define them (e.g. Hotel). */
+  showRoomType?: boolean;
 }
 
-export default function HistoryRoomsSummary({ rooms }: HistoryRoomsSummaryProps) {
+export default function HistoryRoomsSummary({ rooms, showRoomType = false }: HistoryRoomsSummaryProps) {
   const { t } = useLanguage();
+
+  const roomTypeLabel = (unitId: string): string | null => {
+    if (!showRoomType) return null;
+    const labelKey = unitRoomTypeLabelKey(unitId);
+    return labelKey ? t(`manage.${labelKey}`) : null;
+  };
 
   if (rooms.length === 0) {
     return <span className="history-rooms-empty">—</span>;
@@ -54,16 +62,24 @@ export default function HistoryRoomsSummary({ rooms }: HistoryRoomsSummaryProps)
 
   return (
     <ul className="history-rooms-list">
-      {rooms.map((stay) => (
+      {rooms.map((stay) => {
+        const typeLabel = roomTypeLabel(stay.roomUnitId);
+        return (
         <li key={`${stay.roomUnitId}|${stay.checkIn}|${stay.checkOut}`} className="history-rooms-item">
-          <span className="history-rooms-name">{unitLabel(stay.roomUnitId)}</span>
+          <span className="history-rooms-name">
+            {unitLabel(stay.roomUnitId)}
+            {typeLabel && (
+              <span className="history-rooms-type"> · {typeLabel}</span>
+            )}
+          </span>
           <span className="history-rooms-dates">
             {formatStayDateRange(stay.checkIn, stay.checkOut)}
             {' · '}
             {t('manage.nightsCount', { count: diffDays(stay.checkIn, stay.checkOut) })}
           </span>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

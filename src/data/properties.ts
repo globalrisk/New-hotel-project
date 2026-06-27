@@ -117,6 +117,26 @@ export function unitLabelById(unitId: string): string {
   return unitId;
 }
 
+export function unitById(unitId: string): { unit: RoomUnit; property: Property } | null {
+  for (const property of PROPERTIES) {
+    const unit = property.units.find((entry) => entry.id === unitId);
+    if (unit) return { unit, property };
+  }
+  return null;
+}
+
+export function unitRoomTypeId(unitId: string): number | null {
+  return unitById(unitId)?.unit.roomTypeId ?? null;
+}
+
+/** i18n key under manage.* when the property defines explicit room type labels (e.g. Hotel Single/Double). */
+export function unitRoomTypeLabelKey(unitId: string): string | null {
+  const found = unitById(unitId);
+  if (!found) return null;
+  const roomType = found.property.roomTypes.find((entry) => entry.id === found.unit.roomTypeId);
+  return roomType?.labelKey ?? null;
+}
+
 export function reservationBelongsToProperty(
   reservation: { rooms: Array<{ roomUnitId: string }> },
   propertyId: PropertyId,

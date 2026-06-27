@@ -8,6 +8,7 @@ import {
   PROPERTIES,
   readStoredPropertyId,
   unitLabelById,
+  unitRoomTypeLabelKey,
   type PropertyId,
 } from '../data/properties';
 import { computeDashboardStats, groupStayRowsByReservation, type DashboardGuestGroup } from '../lib/dashboardStats';
@@ -27,10 +28,12 @@ function isoToDisplay(iso: string): string {
 function GuestGroupTable({
   groups,
   t,
+  showRoomType,
   emptyMessage,
 }: {
   groups: DashboardGuestGroup[];
   t: (key: string, params?: Record<string, string | number>) => string;
+  showRoomType?: boolean;
   emptyMessage?: string;
 }) {
   if (groups.length === 0) {
@@ -63,7 +66,7 @@ function GuestGroupTable({
               </td>
               <td className="dashboard-rooms-cell" data-label={t('dashboard.colRooms')}>
                 <span className="dashboard-table-value">
-                  <HistoryRoomsSummary rooms={group.stays} />
+                  <HistoryRoomsSummary rooms={group.stays} showRoomType={showRoomType} />
                 </span>
               </td>
               <td data-label={t('dashboard.colGuests')}>
@@ -81,10 +84,12 @@ function UnbookedRoomsList({
   unitIds,
   t,
   unitLabel,
+  showRoomType,
 }: {
   unitIds: string[];
   t: (key: string, params?: Record<string, string | number>) => string;
   unitLabel: (unitId: string) => string;
+  showRoomType?: boolean;
 }) {
   if (unitIds.length === 0) {
     return <p className="dashboard-empty">{t('dashboard.emptyUnbooked')}</p>;
@@ -92,11 +97,16 @@ function UnbookedRoomsList({
 
   return (
     <ul className="dashboard-unbooked-list">
-      {unitIds.map((unitId) => (
+      {unitIds.map((unitId) => {
+        const typeLabelKey = showRoomType ? unitRoomTypeLabelKey(unitId) : null;
+        const typeLabel = typeLabelKey ? t(`manage.${typeLabelKey}`) : null;
+        return (
         <li key={unitId} className="dashboard-unbooked-item">
           {unitLabel(unitId)}
+          {typeLabel && <span className="dashboard-unbooked-type"> · {typeLabel}</span>}
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
@@ -161,6 +171,7 @@ export default function Dashboard() {
 
   const today = todayIso();
   const selectedDateLabel = isoToDisplay(selectedDate);
+  const showRoomType = getProperty(activePropertyId).roomTypes.some((roomType) => roomType.labelKey != null);
 
   return (
     <div className="dashboard">
@@ -259,21 +270,23 @@ export default function Dashboard() {
                     unitIds={stats.unbookedUnitIds}
                     t={t}
                     unitLabel={unitLabelById}
+                    showRoomType={showRoomType}
                   />
                 </section>
                 <section className="dashboard-list-section">
                   <h2>{t('dashboard.arriving')}</h2>
-                  <GuestGroupTable groups={arrivingGroups} t={t} />
+                  <GuestGroupTable groups={arrivingGroups} t={t} showRoomType={showRoomType} />
                 </section>
                 <section className="dashboard-list-section">
                   <h2>{t('dashboard.departing')}</h2>
-                  <GuestGroupTable groups={departingGroups} t={t} />
+                  <GuestGroupTable groups={departingGroups} t={t} showRoomType={showRoomType} />
                 </section>
                 <section className="dashboard-list-section dashboard-list-section-wide">
                   <h2>{t('dashboard.staying')}</h2>
                   <GuestGroupTable
                     groups={stayingGroups}
                     t={t}
+                    showRoomType={showRoomType}
                     emptyMessage={t('dashboard.emptyStaying')}
                   />
                 </section>

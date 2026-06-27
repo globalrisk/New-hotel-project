@@ -22,6 +22,11 @@
   line-height: 1.3;
 }
 
+.history-rooms-type {
+  font-weight: 500;
+  color: #666;
+}
+
 .history-rooms-dates {
   font-size: 0.82rem;
   color: #555;

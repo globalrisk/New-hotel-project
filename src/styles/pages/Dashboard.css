@@ -239,6 +239,11 @@
   color: var(--text-color, #333);
 }
 
+.dashboard-unbooked-type {
+  font-weight: 500;
+  color: #666;
+}
+
 .dashboard-list-section h2 {
   font-size: 1.1rem;
   margin: 0 0 0.75rem;
