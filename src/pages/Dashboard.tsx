@@ -51,16 +51,24 @@ function GuestGroupTable({
         <tbody>
           {groups.map((group) => (
             <tr key={group.reservationId}>
-              <td>
-                <Link to="/admin/rooms" className="dashboard-guest-link">
-                  {group.guestName}
-                </Link>
+              <td data-label={t('dashboard.colGuest')}>
+                <span className="dashboard-table-value">
+                  <Link to="/admin/rooms" className="dashboard-guest-link">
+                    {group.guestName}
+                  </Link>
+                </span>
               </td>
-              <td>{group.guestPhone.trim() || '—'}</td>
-              <td className="dashboard-rooms-cell">
-                <HistoryRoomsSummary rooms={group.stays} />
+              <td data-label={t('dashboard.colPhone')}>
+                <span className="dashboard-table-value">{group.guestPhone.trim() || '—'}</span>
               </td>
-              <td>{group.guests}</td>
+              <td className="dashboard-rooms-cell" data-label={t('dashboard.colRooms')}>
+                <span className="dashboard-table-value">
+                  <HistoryRoomsSummary rooms={group.stays} />
+                </span>
+              </td>
+              <td data-label={t('dashboard.colGuests')}>
+                <span className="dashboard-table-value">{group.guests}</span>
+              </td>
             </tr>
           ))}
         </tbody>
