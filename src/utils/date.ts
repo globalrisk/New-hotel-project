@@ -77,3 +77,27 @@ export function startOfDay(date: Date): Date {
   d.setHours(0, 0, 0, 0);
   return d;
 }
+
+export interface MonthGridCell {
+  iso: string;
+  day: number;
+}
+
+/** Sunday-first padding + one cell per day in the month. */
+export function monthGridCells(year: number, monthIndex: number): (MonthGridCell | null)[] {
+  const firstDow = new Date(year, monthIndex, 1).getDay();
+  const totalDays = new Date(year, monthIndex + 1, 0).getDate();
+  const cells: (MonthGridCell | null)[] = Array.from({ length: firstDow }, () => null);
+  for (let day = 1; day <= totalDays; day++) {
+    cells.push({
+      iso: toIsoDateString(new Date(year, monthIndex, day)),
+      day,
+    });
+  }
+  return cells;
+}
+
+export function isoToMonthStart(iso: string): Date {
+  const [y, m] = iso.split('-').map(Number);
+  return new Date(y, m - 1, 1);
+}

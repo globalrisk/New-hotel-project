@@ -213,6 +213,7 @@ export default function RoomManagement() {
     () => initialMobileDraft?.historyOpen ?? false,
   );
   const [hoveredStayKey, setHoveredStayKey] = useState<string | null>(null);
+  const [focusedDayIso, setFocusedDayIso] = useState<string | null>(null);
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const pendingScrollTodayRef = useRef(false);
   const scrollToTodayOnLoadRef = useRef(true);
@@ -435,6 +436,16 @@ export default function RoomManagement() {
       toIsoDateString(new Date(year, month, i + 1)),
     );
   }, [year, month]);
+
+  useEffect(() => {
+    if (focusedDayIso && !monthDays.includes(focusedDayIso)) {
+      setFocusedDayIso(null);
+    }
+  }, [monthDays, focusedDayIso]);
+
+  const toggleFocusedDay = (iso: string) => {
+    setFocusedDayIso((prev) => (prev === iso ? null : iso));
+  };
 
   const unitsByType = useMemo(() => {
     const groups = new Map<number, RoomUnit[]>();
@@ -1053,6 +1064,7 @@ export default function RoomManagement() {
                         isWeekend ? 'day-weekend' : '',
                         iso === today ? 'day-today' : '',
                         iso < today ? 'day-past' : '',
+                        focusedDayIso === iso ? 'day-col-focused' : '',
                       ]
                         .filter(Boolean)
                         .join(' ');
@@ -1061,6 +1073,15 @@ export default function RoomManagement() {
                         key={iso}
                         className={headClass}
                         data-today-col={iso === today ? 'true' : undefined}
+                        tabIndex={0}
+                        aria-pressed={focusedDayIso === iso}
+                        onClick={() => toggleFocusedDay(iso)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleFocusedDay(iso);
+                          }
+                        }}
                       >
                         <span className="day-head-week">
                           {(isMobile ? getDayShort : getDayLong)(dayOfWeekFromIso(iso))}
@@ -1141,6 +1162,7 @@ export default function RoomManagement() {
                                 cellStayHoverKey && hoveredStayKey === cellStayHoverKey
                                   ? 'stay-hovered'
                                   : '',
+                                focusedDayIso === iso ? 'day-col-focused' : '',
                               ]
                                 .filter(Boolean)
                                 .join(' ');

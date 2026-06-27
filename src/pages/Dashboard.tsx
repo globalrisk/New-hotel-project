@@ -10,23 +10,31 @@ import {
   unitLabelById,
   type PropertyId,
 } from '../data/properties';
-import { computeDashboardStats, type DashboardStayRow } from '../lib/dashboardStats';
+import { computeDashboardStats, groupStayRowsByReservation, type DashboardGuestGroup } from '../lib/dashboardStats';
 import { fetchReservations } from '../lib/reservationsApi';
-import { todayDdMmYyyy } from '../utils/date';
+import DashboardDayCalendar from '../components/DashboardDayCalendar';
+import HistoryRoomsSummary from '../components/HistoryRoomsSummary';
+import { formatDdMmYyyy, todayIso } from '../utils/date';
 import '../styles/components/PropertySwitcher.css';
 import '../styles/pages/Dashboard.css';
 
-function StayTable({
-  rows,
+function isoToDisplay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return formatDdMmYyyy(new Date(y, m - 1, d));
+}
+
+function GuestGroupTable({
+  groups,
   t,
-  unitLabel,
+  emptyMessage,
 }: {
-  rows: DashboardStayRow[];
+  groups: DashboardGuestGroup[];
   t: (key: string, params?: Record<string, string | number>) => string;
-  unitLabel: (unitId: string) => string;
+  emptyMessage?: string;
 }) {
-  if (rows.length === 0) {
-    return <p className="dashboard-empty">{t('dashboard.emptyList')}</p>;
+  if (groups.length === 0) {
+    return <p className="dashboard-empty">{emptyMessage ?? t('dashboard.emptyList')}</p>;
   }
 
   return (
@@ -36,21 +44,23 @@ function StayTable({
           <tr>
             <th>{t('dashboard.colGuest')}</th>
             <th>{t('dashboard.colPhone')}</th>
-            <th>{t('dashboard.colRoom')}</th>
-            <th>{t('dashboard.colNights')}</th>
+            <th>{t('dashboard.colRooms')}</th>
+            <th>{t('dashboard.colGuests')}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={`${row.reservationId}|${row.roomUnitId}|${row.checkIn}`}>
+          {groups.map((group) => (
+            <tr key={group.reservationId}>
               <td>
                 <Link to="/admin/rooms" className="dashboard-guest-link">
-                  {row.guestName}
+                  {group.guestName}
                 </Link>
               </td>
-              <td>{row.guestPhone.trim() || '—'}</td>
-              <td>{unitLabel(row.roomUnitId)}</td>
-              <td>{t('manage.nightsCount', { count: row.nights })}</td>
+              <td>{group.guestPhone.trim() || '—'}</td>
+              <td className="dashboard-rooms-cell">
+                <HistoryRoomsSummary rooms={group.stays} />
+              </td>
+              <td>{group.guests}</td>
             </tr>
           ))}
         </tbody>
@@ -59,10 +69,35 @@ function StayTable({
   );
 }
 
+function UnbookedRoomsList({
+  unitIds,
+  t,
+  unitLabel,
+}: {
+  unitIds: string[];
+  t: (key: string, params?: Record<string, string | number>) => string;
+  unitLabel: (unitId: string) => string;
+}) {
+  if (unitIds.length === 0) {
+    return <p className="dashboard-empty">{t('dashboard.emptyUnbooked')}</p>;
+  }
+
+  return (
+    <ul className="dashboard-unbooked-list">
+      {unitIds.map((unitId) => (
+        <li key={unitId} className="dashboard-unbooked-item">
+          {unitLabel(unitId)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function Dashboard() {
   const { t } = useLanguage();
   const { isAdmin } = useAuth();
   const [activePropertyId, setActivePropertyId] = useState<PropertyId>(readStoredPropertyId);
+  const [selectedDate, setSelectedDate] = useState(todayIso);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reservations, setReservations] = useState<Awaited<ReturnType<typeof fetchReservations>>>([]);
@@ -99,9 +134,25 @@ export default function Dashboard() {
   };
 
   const stats = useMemo(
-    () => computeDashboardStats(reservations, activePropertyId),
-    [reservations, activePropertyId],
+    () => computeDashboardStats(reservations, activePropertyId, selectedDate),
+    [reservations, activePropertyId, selectedDate],
   );
+
+  const arrivingGroups = useMemo(
+    () => groupStayRowsByReservation(stats.checkInsToday),
+    [stats.checkInsToday],
+  );
+  const departingGroups = useMemo(
+    () => groupStayRowsByReservation(stats.checkOutsToday),
+    [stats.checkOutsToday],
+  );
+  const stayingGroups = useMemo(
+    () => groupStayRowsByReservation(stats.inHouseTonight),
+    [stats.inHouseTonight],
+  );
+
+  const today = todayIso();
+  const selectedDateLabel = isoToDisplay(selectedDate);
 
   return (
     <div className="dashboard">
@@ -131,9 +182,17 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <p className="dashboard-date">
-            {t('dashboard.todayLabel', { date: todayDdMmYyyy() })}
-          </p>
+          <div className="dashboard-date-toolbar">
+            <DashboardDayCalendar
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+            />
+            <p className="dashboard-date">
+              {selectedDate === today
+                ? t('dashboard.viewingToday', { date: selectedDateLabel })
+                : t('dashboard.viewingDate', { date: selectedDateLabel })}
+            </p>
+          </div>
 
           {error && <p className="dashboard-error">{error}</p>}
 
@@ -143,30 +202,27 @@ export default function Dashboard() {
             <>
               <div className="dashboard-cards">
                 <div className="dashboard-card">
-                  <span className="dashboard-card-label">{t('dashboard.checkInsToday')}</span>
+                  <span className="dashboard-card-label">{t('dashboard.checkIns')}</span>
                   <span className="dashboard-card-value">{stats.checkInsToday.length}</span>
                   <span className="dashboard-card-sub">{t('dashboard.roomsCount')}</span>
                 </div>
                 <div className="dashboard-card">
-                  <span className="dashboard-card-label">{t('dashboard.checkOutsToday')}</span>
+                  <span className="dashboard-card-label">{t('dashboard.checkOuts')}</span>
                   <span className="dashboard-card-value">{stats.checkOutsToday.length}</span>
                   <span className="dashboard-card-sub">{t('dashboard.roomsCount')}</span>
                 </div>
                 <div className="dashboard-card">
-                  <span className="dashboard-card-label">{t('dashboard.inHouseTonight')}</span>
+                  <span className="dashboard-card-label">{t('dashboard.inHouse')}</span>
                   <span className="dashboard-card-value">{stats.occupiedUnitIds.length}</span>
                   <span className="dashboard-card-sub">
                     {t('dashboard.ofUnits', { count: stats.totalUnits })}
                   </span>
                 </div>
                 <div className="dashboard-card">
-                  <span className="dashboard-card-label">{t('dashboard.occupancy')}</span>
-                  <span className="dashboard-card-value">{stats.occupancyPercent}%</span>
+                  <span className="dashboard-card-label">{t('dashboard.roomsLeft')}</span>
+                  <span className="dashboard-card-value">{stats.roomsLeft}</span>
                   <span className="dashboard-card-sub">
-                    {t('dashboard.occupiedUnits', {
-                      occupied: stats.occupiedUnitIds.length,
-                      total: stats.totalUnits,
-                    })}
+                    {t('dashboard.ofUnits', { count: stats.totalUnits })}
                   </span>
                 </div>
               </div>
@@ -189,13 +245,29 @@ export default function Dashboard() {
               </div>
 
               <div className="dashboard-lists">
-                <section className="dashboard-list-section">
-                  <h2>{t('dashboard.arrivingToday')}</h2>
-                  <StayTable rows={stats.checkInsToday} t={t} unitLabel={unitLabelById} />
+                <section className="dashboard-list-section dashboard-list-section-wide">
+                  <h2>{t('dashboard.unbookedRooms')}</h2>
+                  <UnbookedRoomsList
+                    unitIds={stats.unbookedUnitIds}
+                    t={t}
+                    unitLabel={unitLabelById}
+                  />
                 </section>
                 <section className="dashboard-list-section">
-                  <h2>{t('dashboard.departingToday')}</h2>
-                  <StayTable rows={stats.checkOutsToday} t={t} unitLabel={unitLabelById} />
+                  <h2>{t('dashboard.arriving')}</h2>
+                  <GuestGroupTable groups={arrivingGroups} t={t} />
+                </section>
+                <section className="dashboard-list-section">
+                  <h2>{t('dashboard.departing')}</h2>
+                  <GuestGroupTable groups={departingGroups} t={t} />
+                </section>
+                <section className="dashboard-list-section dashboard-list-section-wide">
+                  <h2>{t('dashboard.staying')}</h2>
+                  <GuestGroupTable
+                    groups={stayingGroups}
+                    t={t}
+                    emptyMessage={t('dashboard.emptyStaying')}
+                  />
                 </section>
               </div>
             </>

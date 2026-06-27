@@ -297,8 +297,50 @@
   color: var(--primary-color);
   font-weight: 600;
   vertical-align: bottom;
+  cursor: pointer;
+  user-select: none;
   /* border-collapse borders don't stick — redraw them via shadow */
   box-shadow: inset 0 -1px 0 #e3ddd2, inset 1px 0 0 #e3ddd2;
+}
+
+.occupancy-grid th.day-col:hover {
+  background: linear-gradient(rgba(139, 115, 85, 0.18), rgba(139, 115, 85, 0.18)), white;
+}
+
+.occupancy-grid th.day-col.day-col-focused {
+  background: linear-gradient(rgba(139, 115, 85, 0.3), rgba(139, 115, 85, 0.3)), white;
+  box-shadow:
+    inset 2px 0 0 var(--primary-color),
+    inset -2px 0 0 var(--primary-color),
+    inset 0 -2px 0 var(--primary-color);
+}
+
+.occupancy-grid th.day-col.day-col-focused .day-head-num {
+  font-weight: 800;
+}
+
+.occupancy-grid th.day-col.day-weekend.day-col-focused {
+  background: linear-gradient(rgba(212, 175, 55, 0.45), rgba(212, 175, 55, 0.45)), white;
+}
+
+.occupancy-grid td.day-cell.day-col-focused {
+  box-shadow: inset 2px 0 0 var(--primary-color), inset -2px 0 0 var(--primary-color);
+}
+
+.occupancy-grid td.day-cell-free.day-col-focused {
+  background: #d4e0d4;
+}
+
+.occupancy-grid td.day-cell-free.day-weekend.day-col-focused {
+  background: #ebe0cf;
+}
+
+.occupancy-grid td.day-cell-booked.day-col-focused {
+  background: #ece6dc;
+}
+
+.occupancy-grid td.day-cell-booked.day-weekend.day-col-focused {
+  background: #f0e8dc;
 }
 
 .occupancy-grid th.day-col.day-weekend {

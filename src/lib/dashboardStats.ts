@@ -23,7 +23,8 @@ export interface DashboardStats {
   checkOutsToday: DashboardStayRow[];
   inHouseTonight: DashboardStayRow[];
   occupiedUnitIds: string[];
-  occupancyPercent: number;
+  unbookedUnitIds: string[];
+  roomsLeft: number;
   totalUnits: number;
 }
 
@@ -66,38 +67,87 @@ function compareStayRows(a: DashboardStayRow, b: DashboardStayRow): number {
   return a.guestName.localeCompare(b.guestName, undefined, { sensitivity: 'base' });
 }
 
+export interface DashboardGuestGroup {
+  reservationId: string;
+  guestName: string;
+  guestPhone: string;
+  guests: number;
+  stays: Array<{
+    roomUnitId: string;
+    checkIn: string;
+    checkOut: string;
+    nights: number;
+  }>;
+}
+
+export function groupStayRowsByReservation(rows: DashboardStayRow[]): DashboardGuestGroup[] {
+  const map = new Map<string, DashboardGuestGroup>();
+
+  for (const row of rows) {
+    let group = map.get(row.reservationId);
+    if (!group) {
+      group = {
+        reservationId: row.reservationId,
+        guestName: row.guestName,
+        guestPhone: row.guestPhone,
+        guests: row.guests,
+        stays: [],
+      };
+      map.set(row.reservationId, group);
+    }
+    group.stays.push({
+      roomUnitId: row.roomUnitId,
+      checkIn: row.checkIn,
+      checkOut: row.checkOut,
+      nights: row.nights,
+    });
+  }
+
+  return [...map.values()].sort((a, b) => {
+    const roomA = a.stays[0]?.roomUnitId ?? '';
+    const roomB = b.stays[0]?.roomUnitId ?? '';
+    const byRoom = roomA.localeCompare(roomB);
+    if (byRoom !== 0) return byRoom;
+    return a.guestName.localeCompare(b.guestName, undefined, { sensitivity: 'base' });
+  });
+}
+
 export function computeDashboardStats(
   reservations: Reservation[],
   propertyId: PropertyId,
-  today: string = todayIso(),
+  viewDate: string = todayIso(),
 ): DashboardStats {
   const property = getProperty(propertyId);
   const unitIds = new Set(property.units.map((unit) => unit.id));
   const allStays = rowsForProperty(reservations, propertyId, unitIds);
 
   const checkInsToday = allStays
-    .filter((stay) => stay.checkIn === today)
+    .filter((stay) => stay.checkIn === viewDate)
     .sort(compareStayRows);
 
   const checkOutsToday = allStays
-    .filter((stay) => stay.checkOut === today)
+    .filter((stay) => stay.checkOut === viewDate)
     .sort(compareStayRows);
 
   const inHouseTonight = allStays
-    .filter((stay) => stay.checkIn <= today && stay.checkOut > today)
+    .filter((stay) => stay.checkIn <= viewDate && stay.checkOut > viewDate)
     .sort(compareStayRows);
 
   const occupiedUnitIds = [...new Set(inHouseTonight.map((stay) => stay.roomUnitId))];
+  const occupiedSet = new Set(occupiedUnitIds);
+  const unbookedUnitIds = property.units
+    .filter((unit) => !occupiedSet.has(unit.id))
+    .map((unit) => unit.id);
   const totalUnits = property.units.length;
-  const occupancyPercent =
-    totalUnits > 0 ? Math.round((occupiedUnitIds.length / totalUnits) * 100) : 0;
+  const roomsLeft = unbookedUnitIds.length;
 
   return {
     checkInsToday,
     checkOutsToday,
     inHouseTonight,
     occupiedUnitIds,
-    occupancyPercent,
+    unbookedUnitIds,
+    roomsLeft,
     totalUnits,
   };
 }
